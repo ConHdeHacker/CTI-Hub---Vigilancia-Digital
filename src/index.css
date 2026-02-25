@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  --bg: #0a0a0a;
+  --ink: #ffffff;
+  --line: #262626;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+.data-grid-row {
+  display: grid;
+  grid-template-columns: 80px 1.5fr 1fr 1fr 120px 150px;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.2s ease;
+  cursor: pointer;
+  align-items: center;
+}
+
+.data-grid-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.col-header {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #737373;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.data-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.status-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
