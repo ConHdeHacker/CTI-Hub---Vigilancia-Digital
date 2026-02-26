@@ -30,12 +30,14 @@ Sigue estos pasos para desplegar la aplicación en tu servidor:
    cd <nombre-de-la-carpeta>
    ```
 
-3. **Configurar variables de entorno:**
-   Crea un archivo `.env` en la raíz del proyecto:
-   ```env
-   APP_MODE=production
+3. **Configurar la aplicación:**
+   El proyecto ya incluye un archivo `.env` por defecto. Puedes editarlo para cambiar el modo o el puerto:
+   ```bash
+   nano .env
    ```
-   *Nota: Usa `APP_MODE=development` para generar datos de prueba automáticamente.*
+   Dentro del archivo verás:
+   - `APP_MODE`: Cámbialo a `production` para una instalación limpia o déjalo en `development` para datos de prueba.
+   - `PORT`: Define el puerto en el que quieres que se exponga la herramienta (por defecto 3000).
 
 4. **Instalar dependencias del proyecto:**
    ```bash
