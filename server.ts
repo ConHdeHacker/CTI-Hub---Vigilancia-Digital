@@ -4,6 +4,10 @@ import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+
+// Cargar variables de entorno desde .env
+dotenv.config();
 
 // Utilidades para manejar rutas en módulos ES
 const __filename = fileURLToPath(import.meta.url);
@@ -11,6 +15,10 @@ const __dirname = path.dirname(__filename);
 
 // Inicialización de la base de datos local
 const db = new Database("surveillance.db");
+
+// Determinar el modo de la aplicación (development | production)
+const APP_MODE = process.env.APP_MODE || 'development';
+console.log(`[SYSTEM] Iniciando en modo: ${APP_MODE}`);
 
 /**
  * Inicialización del Esquema de la Base de Datos
@@ -163,46 +171,53 @@ db.exec(`
   );
 `);
 
-  // Inserción de datos iniciales (Seeding) si la base de datos está vacía
-  const clientCount = db.prepare("SELECT COUNT(*) as count FROM clients").get() as { count: number };
-  if (clientCount.count === 0) {
-    // Crear clientes por defecto
-    const insertClient = db.prepare("INSERT INTO clients (name) VALUES (?)");
-    const acmeId = insertClient.run("Acme Corp").lastInsertRowid;
-    const globexId = insertClient.run("Globex").lastInsertRowid;
-
-    // Crear usuarios iniciales con diferentes roles
+  // Inserción de datos iniciales (Seeding)
+  const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
+  
+  if (userCount.count === 0) {
+    console.log("[SYSTEM] Base de datos vacía. Iniciando seeding...");
+    
+    // 1. Siempre crear el Super Admin inicial
     const insertUser = db.prepare("INSERT INTO users (username, email, password, role, client_id) VALUES (?, ?, ?, ?, ?)");
     insertUser.run("admin", "admin@cti-platform.com", "admin123", "super_admin", null);
-    insertUser.run("analyst", "analyst@cti-platform.com", "analyst123", "analyst", null);
-    insertUser.run("acme_user", "contact@acme.com", "acme123", "client", acmeId);
-    insertUser.run("globex_user", "contact@globex.com", "globex123", "client", globexId);
+    console.log("[SYSTEM] Usuario 'admin' (super_admin) creado.");
 
-    const insertAlert = db.prepare("INSERT INTO alerts (client_id, client_alert_id, category, title, description, severity) VALUES (?, ?, ?, ?, ?, ?)");
-    
-    // Categorías oficiales del sistema
-    const categories = [
-      "Exposicion de informacion",
-      "Fugas de credenciales",
-      "Exposicion de sistemas y vulnerabilidades",
-      "Monitorizacion de dominios",
-      "Monitorizacion Web / Defacement",
-      "Listas de categorizacion",
-      "Contenidos ofensivos",
-      "Abuso y suplantacion de marca",
-      "Fraude de aplicaciones",
-      "Exposicion Bancaria y carding"
-    ];
+    // 2. Datos de prueba solo en modo development
+    if (APP_MODE === 'development') {
+      console.log("[SYSTEM] Generando datos de prueba (PREPRODUCCIÓN)...");
+      
+      const insertClient = db.prepare("INSERT INTO clients (name) VALUES (?)");
+      const acmeId = insertClient.run("Acme Corp").lastInsertRowid;
+      const globexId = insertClient.run("Globex").lastInsertRowid;
 
-    // Generar alertas de ejemplo para Acme
-    categories.forEach((cat, index) => {
-      insertAlert.run(acmeId, index + 1, cat, `Incidente de ${cat} detectado`, `Descripción detallada para la categoría ${cat} en Acme Corp.`, index % 4 === 0 ? 'critical' : index % 3 === 0 ? 'high' : 'medium');
-    });
+      insertUser.run("analyst", "analyst@cti-platform.com", "analyst123", "analyst", null);
+      insertUser.run("acme_user", "contact@acme.com", "acme123", "client", acmeId);
+      insertUser.run("globex_user", "contact@globex.com", "globex123", "client", globexId);
 
-    // Generar alertas de ejemplo para Globex
-    categories.forEach((cat, index) => {
-      insertAlert.run(globexId, index + 1, cat, `Alerta de ${cat} en Globex`, `Análisis técnico de la amenaza de ${cat} para Globex.`, index % 2 === 0 ? 'high' : 'low');
-    });
+      const insertAlert = db.prepare("INSERT INTO alerts (client_id, client_alert_id, category, title, description, severity) VALUES (?, ?, ?, ?, ?, ?)");
+      
+      const categories = [
+        "Exposicion de informacion",
+        "Fugas de credenciales",
+        "Exposicion de sistemas y vulnerabilidades",
+        "Monitorizacion de dominios",
+        "Monitorizacion Web / Defacement",
+        "Listas de categorizacion",
+        "Contenidos ofensivos",
+        "Abuso y suplantacion de marca",
+        "Fraude de aplicaciones",
+        "Exposicion Bancaria y carding"
+      ];
+
+      categories.forEach((cat, index) => {
+        insertAlert.run(acmeId, index + 1, cat, `Incidente de ${cat} detectado`, `Descripción detallada para la categoría ${cat} en Acme Corp.`, index % 4 === 0 ? 'critical' : index % 3 === 0 ? 'high' : 'medium');
+        insertAlert.run(globexId, index + 1, cat, `Alerta de ${cat} en Globex`, `Análisis técnico de la amenaza de ${cat} para Globex.`, index % 2 === 0 ? 'high' : 'low');
+      });
+      
+      console.log("[SYSTEM] Datos de prueba generados correctamente.");
+    } else {
+      console.log("[SYSTEM] Modo PRODUCCIÓN: No se han generado datos de prueba.");
+    }
   }
 
   const providerCount = db.prepare("SELECT COUNT(*) as count FROM provider_configs").get() as { count: number };
@@ -310,6 +325,35 @@ async function startServer() {
   // --- RUTAS DE LA API ---
 
   /**
+   * Login de usuario
+   */
+  app.post("/api/login", (req, res) => {
+    const { username, password } = req.body;
+    const user = db.prepare("SELECT users.*, clients.name as client_name FROM users LEFT JOIN clients ON users.client_id = clients.id WHERE username = ? AND password = ?").get(username, password) as any;
+    
+    if (user) {
+      db.prepare("INSERT INTO access_logs (user_id, action, ip) VALUES (?, ?, ?)").run(user.id, 'LOGIN_SUCCESS', req.ip);
+      res.json(user);
+    } else {
+      res.status(401).json({ error: "Credenciales inválidas" });
+    }
+  });
+
+  /**
+   * Logout de usuario
+   */
+  app.post("/api/logout", (req, res) => {
+    const username = req.headers["x-user"];
+    if (username) {
+      const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as any;
+      if (user) {
+        db.prepare("INSERT INTO access_logs (user_id, action, ip) VALUES (?, ?, ?)").run(user.id, 'LOGOUT', req.ip);
+      }
+    }
+    res.json({ success: true });
+  });
+
+  /**
    * Obtener información del usuario actual (Simulación de sesión)
    * Se utiliza el header 'x-user' para identificar al usuario en esta demo.
    */
@@ -320,7 +364,7 @@ async function startServer() {
       // Registrar acceso en logs de auditoría
       db.prepare("INSERT INTO access_logs (user_id, action, ip) VALUES (?, ?, ?)").run(user.id, 'API_ACCESS', req.ip);
     }
-    res.json(user);
+    res.json({ ...user, system_mode: APP_MODE });
   });
 
   /**

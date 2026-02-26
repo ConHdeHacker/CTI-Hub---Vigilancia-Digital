@@ -49,7 +49,9 @@ function cn(...inputs: ClassValue[]) {
  */
 export default function App() {
   // --- ESTADOS GLOBALES ---
-  const [user, setUser] = useState<User | null>(null); // Usuario autenticado
+  const [user, setUser] = useState<any | null>(null); // Usuario autenticado
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [view, setView] = useState<'dashboard' | 'alerts' | 'clients' | 'alert_detail' | 'client_config' | 'connectors' | 'users' | 'categorization_config' | 'system_config'>('dashboard'); // Vista actual
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null); // Cliente seleccionado para configuración
   const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null); // Alerta seleccionada para detalle
@@ -155,10 +157,49 @@ export default function App() {
    * Obtiene el perfil del usuario actual
    */
   const fetchUser = async () => {
-    const res = await fetch('/api/me', { headers: { 'x-user': currentUserRole } });
-    const data = await res.json();
-    setUser(data);
-    return data;
+    try {
+      const res = await fetch('/api/me', { headers: { 'x-user': user?.username || '' } });
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data);
+        return data;
+      }
+    } catch (e) {
+      console.error("Error fetching user", e);
+    }
+    return null;
+  };
+
+  const handleLogin = async (username: string, password: string) => {
+    setIsLoggingIn(true);
+    setLoginError(null);
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data);
+        setView('dashboard');
+      } else {
+        const err = await res.json();
+        setLoginError(err.error || "Error al iniciar sesión");
+      }
+    } catch (e) {
+      setLoginError("Error de conexión con el servidor");
+    }
+    setIsLoggingIn(false);
+  };
+
+  const handleLogout = async () => {
+    await fetch('/api/logout', { 
+      method: 'POST',
+      headers: { 'x-user': user?.username || '' }
+    });
+    setUser(null);
+    setView('dashboard');
   };
 
   const fetchUserConfig = async () => {
@@ -210,6 +251,10 @@ export default function App() {
 
   if (loading) return <div className="flex items-center justify-center h-screen text-zinc-500 font-mono">INITIALIZING_SYSTEM...</div>;
 
+  if (!user) {
+    return <LoginView onLogin={handleLogin} error={loginError} loading={isLoggingIn} />;
+  }
+
   return (
     <div className="flex h-screen bg-[#0a0a0a] text-zinc-100 overflow-hidden">
       {/* Sidebar */}
@@ -220,7 +265,12 @@ export default function App() {
           </div>
           <div>
             <h1 className="font-bold text-sm tracking-tight">VIGILANCIA_CTI</h1>
-            <p className="text-[10px] text-zinc-500 font-mono">v1.0.4-stable</p>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] text-zinc-500 font-mono">v1.0.4-stable</p>
+              {user?.system_mode === 'development' && (
+                <span className="text-[8px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1 rounded font-bold uppercase">Preprod</span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -311,30 +361,22 @@ export default function App() {
         </nav>
 
         <div className="p-4 border-t border-zinc-800">
-          <div className="flex items-center gap-3 mb-4 p-2 rounded hover:bg-zinc-800/50 transition-colors">
-            <div className="w-8 h-8 bg-zinc-700 rounded-full flex items-center justify-center text-xs font-bold">
-              {user?.username[0].toUpperCase()}
+          <div className="flex items-center gap-3 p-3 bg-zinc-900/50 rounded-lg border border-zinc-800">
+            <div className="w-8 h-8 rounded bg-zinc-800 flex items-center justify-center text-zinc-400">
+              <Shield size={16} />
             </div>
-            <div className="flex-1 overflow-hidden">
-              <p className="text-xs font-medium truncate">{user?.username}</p>
-              <p className="text-[10px] text-zinc-500 font-mono uppercase">{user?.role}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold truncate">{user.username}</p>
+              <p className="text-[10px] text-zinc-500 uppercase font-mono">{user.role}</p>
             </div>
             <button 
-              onClick={() => {
-                const roles = ['admin', 'analyst', 'acme_user', 'globex_user'];
-                const nextIndex = (roles.indexOf(currentUserRole) + 1) % roles.length;
-                setCurrentUserRole(roles[nextIndex]);
-              }}
-              className="text-zinc-500 hover:text-zinc-300"
-              title="Switch Role (Demo)"
+              onClick={handleLogout}
+              className="p-1.5 hover:bg-zinc-800 rounded text-zinc-500 hover:text-red-400 transition-colors"
+              title="Cerrar Sesión"
             >
-              <Eye size={14} />
+              <LogOut size={16} />
             </button>
           </div>
-          <button className="flex items-center gap-2 text-xs text-zinc-500 hover:text-red-400 transition-colors w-full p-2">
-            <LogOut size={16} />
-            Cerrar Sesión
-          </button>
         </div>
       </aside>
 
@@ -2648,6 +2690,95 @@ function ContactManagement({ contacts, onAdd, onDelete }: { contacts: any[], onA
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Vista de Login
+ */
+function LoginView({ onLogin, error, loading }: { onLogin: (u: string, p: string) => void, error: string | null, loading: boolean }) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onLogin(username, password);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6">
+      <div className="w-full max-w-md space-y-8">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 bg-emerald-500 rounded-2xl mx-auto flex items-center justify-center shadow-2xl shadow-emerald-500/20">
+            <Shield className="text-black" size={32} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">VIGILANCIA_CTI</h1>
+            <p className="text-sm text-zinc-500">Plataforma de Inteligencia de Amenazas</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="bg-[#0d0d0d] border border-zinc-800 p-8 rounded-2xl shadow-2xl space-y-6">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-3 rounded text-xs flex items-center gap-2">
+              <AlertTriangle size={14} />
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Usuario</label>
+              <div className="relative">
+                <Users className="absolute left-3 top-2.5 text-zinc-600" size={16} />
+                <input 
+                  type="text" 
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  placeholder="Introduce tu usuario"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Contraseña</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-2.5 text-zinc-600" size={16} />
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
+          <button 
+            type="submit"
+            disabled={loading}
+            className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:hover:bg-emerald-500 text-black font-bold py-3 rounded-xl transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <Activity className="animate-spin" size={18} />
+            ) : (
+              <>
+                Acceder al Sistema
+                <ChevronRight size={18} />
+              </>
+            )}
+          </button>
+        </form>
+
+        <p className="text-center text-[10px] text-zinc-600 font-mono uppercase tracking-widest">
+          Acceso restringido a personal autorizado
+        </p>
       </div>
     </div>
   );
