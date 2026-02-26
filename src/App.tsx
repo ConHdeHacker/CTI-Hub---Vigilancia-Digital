@@ -26,7 +26,11 @@ import {
   X,
   Calendar,
   Layout,
-  CheckCircle2
+  CheckCircle2,
+  Terminal,
+  Languages,
+  Database,
+  Key
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
@@ -39,15 +43,20 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Componente Principal de la Aplicación (App)
+ * Gestiona el estado global, la navegación (vistas) y la renderización de componentes.
+ */
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState<'dashboard' | 'alerts' | 'clients' | 'alert_detail' | 'client_config' | 'connectors' | 'users'>('dashboard');
-  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
-  const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [activeModules, setActiveModules] = useState<string[]>([]);
+  // --- ESTADOS GLOBALES ---
+  const [user, setUser] = useState<User | null>(null); // Usuario autenticado
+  const [view, setView] = useState<'dashboard' | 'alerts' | 'clients' | 'alert_detail' | 'client_config' | 'connectors' | 'users' | 'categorization_config' | 'system_config'>('dashboard'); // Vista actual
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(null); // Cliente seleccionado para configuración
+  const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null); // Alerta seleccionada para detalle
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null); // Filtro de categoría
+  const [alerts, setAlerts] = useState<Alert[]>([]); // Listado de alertas
+  const [clients, setClients] = useState<Client[]>([]); // Listado de clientes
+  const [activeModules, setActiveModules] = useState<string[]>([]); // Módulos activos para el usuario/cliente
   const [loading, setLoading] = useState(true);
   const [currentUserRole, setCurrentUserRole] = useState<string>('admin'); // For demo toggling
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
@@ -67,6 +76,10 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<Alert[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  /**
+   * Inicialización de la aplicación
+   * Carga el perfil, clientes, configuración y alertas iniciales.
+   */
   useEffect(() => {
     const init = async () => {
       setLoading(true);
@@ -81,6 +94,9 @@ export default function App() {
     init();
   }, [currentUserRole]);
 
+  /**
+   * Obtiene las notificaciones pendientes del usuario
+   */
   const fetchNotifications = async () => {
     try {
       const res = await fetch('/api/notifications', { headers: { 'x-user': currentUserRole } });
@@ -91,17 +107,26 @@ export default function App() {
     }
   };
 
+  /**
+   * Obtiene la configuración personalizada de widgets del dashboard
+   */
   const fetchDashboardConfig = async () => {
     const res = await fetch('/api/dashboard/config', { headers: { 'x-user': currentUserRole } });
     const data = await res.json();
     setDashboardConfig(data);
   };
 
+  /**
+   * Marca una notificación como leída
+   */
   const handleMarkAsRead = async (id: number) => {
     await fetch(`/api/notifications/${id}`, { method: 'PATCH' });
     fetchNotifications();
   };
 
+  /**
+   * Ejecuta una búsqueda avanzada de alertas con filtros múltiples
+   */
   const handleAdvancedSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsSearching(true);
@@ -117,14 +142,18 @@ export default function App() {
       setAlerts([]);
     }
     setIsSearching(false);
-    setView('alerts'); // Switch to alerts view to show results
+    setView('alerts'); // Cambiar a la vista de alertas para mostrar resultados
     setShowSearchModal(false);
   };
 
+  // Recargar alertas cuando cambia el filtro de categoría
   useEffect(() => {
     fetchAlerts();
   }, [selectedCategory]);
 
+  /**
+   * Obtiene el perfil del usuario actual
+   */
   const fetchUser = async () => {
     const res = await fetch('/api/me', { headers: { 'x-user': currentUserRole } });
     const data = await res.json();
@@ -274,8 +303,8 @@ export default function App() {
               <SidebarItem 
                 icon={<Settings size={18} />} 
                 label="Configuración" 
-                active={view === 'client_config'}
-                onClick={() => setView('client_config')}
+                active={view === 'system_config'}
+                onClick={() => setView('system_config')}
               />
             </>
           )}
@@ -318,6 +347,8 @@ export default function App() {
               {view === 'alerts' && 'Alert Management'}
               {view === 'clients' && 'Client Directory'}
               {view === 'alert_detail' && `Alert #${selectedAlertId}`}
+              {view === 'system_config' && 'System Configuration'}
+              {view === 'connectors' && 'Data Connectors'}
             </h2>
           </div>
           <div className="flex items-center gap-6">
@@ -596,7 +627,20 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <ConnectorsView />
+                <ConnectorsView onSelect={(id) => {
+                  if (id === 'categorization') setView('categorization_config');
+                }} />
+              </motion.div>
+            )}
+
+            {view === 'categorization_config' && (
+              <motion.div
+                key="categorization_config"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <CategorizationConnectorConfig onBack={() => setView('connectors')} />
               </motion.div>
             )}
 
@@ -626,6 +670,17 @@ export default function App() {
                     setView('client_config');
                   }}
                 />
+              </motion.div>
+            )}
+
+            {view === 'system_config' && (
+              <motion.div
+                key="system_config"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <AdminSettingsView />
               </motion.div>
             )}
 
@@ -982,12 +1037,13 @@ function SeverityCount({ label, count, color, bg }: { label: string, count: numb
   );
 }
 
-function ConnectorsView() {
+function ConnectorsView({ onSelect }: { onSelect: (id: string) => void }) {
   const connectors = [
-    { name: 'Docker Scanner V1', status: 'online', type: 'Vulnerabilidades', lastSync: '2m ago' },
-    { name: 'Domain Monitor X', status: 'online', type: 'Dominios', lastSync: '5m ago' },
-    { name: 'Pastebin Scraper', status: 'offline', type: 'Fugas', lastSync: '1h ago' },
-    { name: 'Social Media Watcher', status: 'online', type: 'RRSS', lastSync: '10m ago' },
+    { id: 'categorization', name: 'Categorization Connector', status: 'online', type: 'Categorización', lastSync: '1m ago' },
+    { id: 'docker', name: 'Docker Scanner V1', status: 'online', type: 'Vulnerabilidades', lastSync: '2m ago' },
+    { id: 'domain', name: 'Domain Monitor X', status: 'online', type: 'Dominios', lastSync: '5m ago' },
+    { id: 'pastebin', name: 'Pastebin Scraper', status: 'offline', type: 'Fugas', lastSync: '1h ago' },
+    { id: 'social', name: 'Social Media Watcher', status: 'online', type: 'RRSS', lastSync: '10m ago' },
   ];
 
   return (
@@ -1005,13 +1061,17 @@ function ConnectorsView() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {connectors.map(conn => (
-          <div key={conn.name} className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 flex items-center gap-6">
-            <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${conn.status === 'online' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+          <div 
+            key={conn.id} 
+            onClick={() => onSelect(conn.id)}
+            className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 flex items-center gap-6 cursor-pointer hover:border-emerald-500/50 transition-all group"
+          >
+            <div className={`w-12 h-12 rounded-lg flex items-center justify-center transition-colors ${conn.status === 'online' ? 'bg-emerald-500/10 text-emerald-500 group-hover:bg-emerald-500/20' : 'bg-red-500/10 text-red-500 group-hover:bg-red-500/20'}`}>
               <Cpu size={24} />
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold">{conn.name}</h3>
+                <h3 className="text-sm font-bold group-hover:text-emerald-400 transition-colors">{conn.name}</h3>
                 <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border ${conn.status === 'online' ? 'border-emerald-500/20 text-emerald-500' : 'border-red-500/20 text-red-500'}`}>
                   {conn.status}
                 </span>
@@ -1024,6 +1084,543 @@ function ConnectorsView() {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Componente de Configuración del Conector de Categorización
+ * Permite gestionar los proveedores de inteligencia (URLHaus, AbuseIPDB, etc.)
+ */
+function CategorizationConnectorConfig({ onBack }: { onBack: () => void }) {
+  const [providers, setProviders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [reloading, setReloading] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<any | null>(null);
+
+  useEffect(() => {
+    fetchProviders();
+  }, []);
+
+  /**
+   * Obtiene el listado de proveedores configurados desde la API
+   */
+  const fetchProviders = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/connectors/categorization/providers');
+      const data = await res.json();
+      setProviders(data);
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  };
+
+  /**
+   * Activa o desactiva un proveedor específico
+   */
+  const handleToggleProvider = async (key: string, enabled: boolean) => {
+    await fetch(`/api/connectors/categorization/providers/${key}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled })
+    });
+    fetchProviders();
+  };
+
+  /**
+   * Solicita al microservicio que recargue su configuración en caliente
+   */
+  const handleReload = async () => {
+    setReloading(true);
+    await fetch('/api/connectors/categorization/reload', { method: 'POST' });
+    setTimeout(() => {
+      setReloading(false);
+      fetchProviders();
+    }, 1000);
+  };
+
+  /**
+   * Guarda los cambios realizados en la configuración de un proveedor
+   */
+  const saveProvider = async (key: string, data: any) => {
+    await fetch(`/api/connectors/categorization/providers/${key}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    setSelectedProvider(null);
+    fetchProviders();
+  };
+
+  if (loading) return <div className="p-8 text-zinc-500 font-mono">LOADING_CONNECTOR_CONFIG...</div>;
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-8 pb-12">
+      <div className="flex justify-between items-center">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 hover:bg-zinc-800 rounded-full transition-colors">
+            <ChevronRight className="rotate-180" size={20} />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Categorization Connector</h1>
+            <p className="text-sm text-zinc-500">Configuración avanzada de proveedores y recarga dinámica.</p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <button 
+            onClick={() => setSelectedProvider({
+              provider_key: '',
+              display_name: '',
+              enabled: true,
+              provider_type: 'api',
+              endpoint: '',
+              auth_type: 'none',
+              auth_payload: {},
+              ttl_seconds: 86400,
+              fetch_interval_seconds: null,
+              config_json: {}
+            })}
+            className="flex items-center gap-2 px-4 py-2 rounded text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-white transition-all"
+          >
+            <Plus size={14} />
+            NUEVO PROVEEDOR
+          </button>
+          <button 
+            onClick={handleReload}
+            disabled={reloading}
+            className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold transition-all ${
+              reloading ? 'bg-zinc-800 text-zinc-500' : 'bg-emerald-500 hover:bg-emerald-600 text-black'
+            }`}
+          >
+            <Activity size={14} className={reloading ? 'animate-spin' : ''} />
+            {reloading ? 'RECARGANDO...' : 'RECARGAR CONFIG'}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 space-y-6">
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl overflow-hidden">
+            <div className="grid grid-cols-5 bg-zinc-900/50 font-mono text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800 p-4">
+              <div className="col-span-2">Proveedor</div>
+              <div>Tipo</div>
+              <div>Estado</div>
+              <div className="text-right">Acciones</div>
+            </div>
+            {providers.map(p => (
+              <div key={p.provider_key} className="grid grid-cols-5 p-4 border-b border-zinc-800 items-center hover:bg-zinc-800/20 transition-colors">
+                <div className="col-span-2">
+                  <p className="text-sm font-bold">{p.display_name}</p>
+                  <p className="text-[10px] text-zinc-500 font-mono truncate max-w-[200px]">{p.endpoint}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] font-mono uppercase bg-zinc-800 px-2 py-0.5 rounded text-zinc-400">
+                    {p.provider_type}
+                  </span>
+                </div>
+                <div>
+                  <button 
+                    onClick={() => handleToggleProvider(p.provider_key, !p.enabled)}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${p.enabled ? 'bg-emerald-500' : 'bg-zinc-800'}`}
+                  >
+                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${p.enabled ? 'left-5.5' : 'left-0.5'}`} />
+                  </button>
+                </div>
+                <div className="text-right">
+                  <button 
+                    onClick={() => setSelectedProvider(p)}
+                    className="text-xs font-mono text-emerald-500 hover:text-emerald-400 uppercase tracking-tighter"
+                  >
+                    Configurar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-6">
+            <div className="flex gap-4">
+              <Shield className="text-emerald-500 shrink-0" size={24} />
+              <div>
+                <h3 className="text-sm font-bold text-emerald-400 mb-1">Seguridad y Licenciamiento</h3>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Algunos proveedores como Spamhaus requieren licencias comerciales. El sistema bloquea la activación si no se confirma el cumplimiento legal en la configuración del proveedor.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {selectedProvider ? (
+            <motion.div 
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 sticky top-8"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xs font-mono text-zinc-500 uppercase">Editar: {selectedProvider.display_name}</h3>
+                <button onClick={() => setSelectedProvider(null)} className="text-zinc-500 hover:text-zinc-300">
+                  <Plus className="rotate-45" size={18} />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {!providers.find(p => p.provider_key === selectedProvider.provider_key) && (
+                  <Field 
+                    label="Provider Key (Unique ID)" 
+                    value={selectedProvider.provider_key} 
+                    onChange={(v) => setSelectedProvider({...selectedProvider, provider_key: v})} 
+                    placeholder="ej: my_new_provider"
+                  />
+                )}
+                <Field 
+                  label="Display Name" 
+                  value={selectedProvider.display_name} 
+                  onChange={(v) => setSelectedProvider({...selectedProvider, display_name: v})} 
+                  placeholder="Nombre público..."
+                />
+                <Field 
+                  label="Endpoint" 
+                  value={selectedProvider.endpoint} 
+                  onChange={(v) => setSelectedProvider({...selectedProvider, endpoint: v})} 
+                />
+                
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono text-zinc-500 uppercase">Auth Type</label>
+                  <select 
+                    value={selectedProvider.auth_type}
+                    onChange={(e) => setSelectedProvider({...selectedProvider, auth_type: e.target.value})}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+                  >
+                    <option value="none">None</option>
+                    <option value="api_key">API Key</option>
+                    <option value="vault">Vault Secret</option>
+                    <option value="bearer">Bearer Token</option>
+                  </select>
+                </div>
+
+                {selectedProvider.auth_type === 'api_key' && (
+                  <Field 
+                    label="API Key" 
+                    value={selectedProvider.auth_payload.api_key || ''} 
+                    onChange={(v) => setSelectedProvider({
+                      ...selectedProvider, 
+                      auth_payload: { ...selectedProvider.auth_payload, api_key: v }
+                    })} 
+                    placeholder="Introducir clave..."
+                  />
+                )}
+
+                {selectedProvider.auth_type === 'vault' && (
+                  <Field 
+                    label="Vault Path" 
+                    value={selectedProvider.auth_payload.vault || ''} 
+                    onChange={(v) => setSelectedProvider({
+                      ...selectedProvider, 
+                      auth_payload: { ...selectedProvider.auth_payload, vault: v }
+                    })} 
+                    placeholder="secret/data/prov/..."
+                  />
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <Field 
+                    label="TTL (sec)" 
+                    value={selectedProvider.ttl_seconds.toString()} 
+                    onChange={(v) => setSelectedProvider({...selectedProvider, ttl_seconds: parseInt(v) || 0})} 
+                  />
+                  <Field 
+                    label="Fetch Int (sec)" 
+                    value={(selectedProvider.fetch_interval_seconds || '').toString()} 
+                    onChange={(v) => setSelectedProvider({...selectedProvider, fetch_interval_seconds: parseInt(v) || null})} 
+                  />
+                </div>
+
+                <div className="pt-4">
+                  <button 
+                    onClick={() => {
+                      if (providers.find(p => p.provider_key === selectedProvider.provider_key)) {
+                        saveProvider(selectedProvider.provider_key, selectedProvider);
+                      } else {
+                        // Create new
+                        fetch('/api/connectors/categorization/providers', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(selectedProvider)
+                        }).then(() => {
+                          setSelectedProvider(null);
+                          fetchProviders();
+                        });
+                      }
+                    }}
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-black py-2 rounded text-xs font-bold transition-colors"
+                  >
+                    {providers.find(p => p.provider_key === selectedProvider.provider_key) ? 'Guardar Cambios' : 'Crear Proveedor'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <div className="bg-zinc-900/30 border border-dashed border-zinc-800 rounded-xl p-12 text-center">
+              <Settings className="mx-auto text-zinc-700 mb-4" size={32} />
+              <p className="text-xs text-zinc-500 font-mono uppercase">Selecciona un proveedor para editar su configuración o crea uno nuevo</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Vista de Configuración del Sistema (Admin)
+ * Permite gestionar idioma, etiquetas de categorías y ver logs de depuración.
+ */
+function AdminSettingsView() {
+  const [activeTab, setActiveTab] = useState<'general' | 'logs' | 'labels' | 'language'>('general');
+  const [settings, setSettings] = useState<any>(null);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logFilter, setLogFilter] = useState({ component: '', level: '' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchSettings();
+    fetchLogs();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'logs') fetchLogs();
+  }, [logFilter, activeTab]);
+
+  const fetchSettings = async () => {
+    const res = await fetch('/api/system/settings');
+    const data = await res.json();
+    setSettings(data);
+  };
+
+  const fetchLogs = async () => {
+    const params = new URLSearchParams();
+    if (logFilter.component) params.append('component', logFilter.component);
+    if (logFilter.level) params.append('level', logFilter.level);
+    const res = await fetch(`/api/system/logs?${params.toString()}`);
+    const data = await res.json();
+    setLogs(data);
+  };
+
+  const handleSaveSettings = async (newSettings: any) => {
+    setSaving(true);
+    await fetch('/api/system/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newSettings)
+    });
+    setSettings({ ...settings, ...newSettings });
+    setSaving(false);
+  };
+
+  if (!settings) return <div className="p-8 text-zinc-500 font-mono">LOADING_SYSTEM_SETTINGS...</div>;
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-8 pb-12">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Configuración del Sistema</h1>
+          <p className="text-sm text-zinc-500">Gestión global de la plataforma, logs de depuración y localización.</p>
+        </div>
+      </div>
+
+      <div className="flex gap-1 bg-zinc-900/50 p-1 rounded-lg w-fit border border-zinc-800">
+        {[
+          { id: 'general', label: 'General', icon: <Settings size={14} /> },
+          { id: 'labels', label: 'Categorías & Labels', icon: <Layout size={14} /> },
+          { id: 'language', label: 'Idioma', icon: <Languages size={14} /> },
+          { id: 'logs', label: 'Debug Logs', icon: <Terminal size={14} /> },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-all",
+              activeTab === tab.id 
+                ? "bg-emerald-500 text-black shadow-lg" 
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800"
+            )}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-8">
+        {activeTab === 'general' && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-8 space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <h3 className="text-sm font-bold flex items-center gap-2">
+                    <Clock size={16} className="text-emerald-500" />
+                    Sesión y Seguridad
+                  </h3>
+                  <Field 
+                    label="Timeout de Sesión (segundos)" 
+                    value={settings.session_timeout?.toString() || '3600'} 
+                    onChange={(v) => handleSaveSettings({ session_timeout: v })} 
+                  />
+                  <div className="flex items-center justify-between p-4 bg-zinc-900/50 rounded-lg border border-zinc-800">
+                    <div>
+                      <p className="text-xs font-bold">Autenticación de Dos Factores (2FA)</p>
+                      <p className="text-[10px] text-zinc-500">Obligatorio para todos los administradores.</p>
+                    </div>
+                    <button className="w-10 h-5 bg-emerald-500 rounded-full relative">
+                      <div className="absolute top-0.5 right-0.5 w-4 h-4 bg-white rounded-full" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="text-sm font-bold flex items-center gap-2">
+                    <Database size={16} className="text-emerald-500" />
+                    Mantenimiento de Datos
+                  </h3>
+                  <Field 
+                    label="Retención de Alertas (días)" 
+                    value="365" 
+                    onChange={() => {}} 
+                  />
+                  <div className="pt-2">
+                    <button className="text-[10px] font-mono text-red-500 hover:text-red-400 uppercase tracking-widest border border-red-500/20 px-3 py-1.5 rounded bg-red-500/5">
+                      Purgar Logs Antiguos
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'language' && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-8">
+              <h3 className="text-sm font-bold mb-6 flex items-center gap-2">
+                <Languages size={16} className="text-emerald-500" />
+                Localización de la Interfaz
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  { id: 'es', name: 'Español', flag: '🇪🇸' },
+                  { id: 'en', name: 'English', flag: '🇺🇸' },
+                  { id: 'fr', name: 'Français', flag: '🇫🇷' },
+                ].map(lang => (
+                  <button
+                    key={lang.id}
+                    onClick={() => handleSaveSettings({ language: lang.id })}
+                    className={cn(
+                      "flex items-center justify-between p-4 rounded-xl border transition-all",
+                      settings.language === lang.id 
+                        ? "bg-emerald-500/10 border-emerald-500 text-emerald-500" 
+                        : "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">{lang.flag}</span>
+                      <span className="text-sm font-bold">{lang.name}</span>
+                    </div>
+                    {settings.language === lang.id && <CheckCircle2 size={16} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'labels' && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-8">
+              <h3 className="text-sm font-bold mb-6 flex items-center gap-2">
+                <Layout size={16} className="text-emerald-500" />
+                Etiquetas de Categorías
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {Object.entries(settings.category_labels || {}).map(([key, label]: [string, any]) => (
+                  <div key={key} className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-zinc-500 uppercase">{key}</label>
+                    <input 
+                      type="text" 
+                      value={label}
+                      onChange={(e) => {
+                        const newLabels = { ...settings.category_labels, [key]: e.target.value };
+                        handleSaveSettings({ category_labels: newLabels });
+                      }}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {activeTab === 'logs' && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl overflow-hidden">
+              <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 flex justify-between items-center">
+                <div className="flex gap-4">
+                  <select 
+                    value={logFilter.component}
+                    onChange={(e) => setLogFilter({ ...logFilter, component: e.target.value })}
+                    className="bg-zinc-800 border border-zinc-700 rounded px-3 py-1 text-[10px] font-mono uppercase text-zinc-300 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="">Todos los Componentes</option>
+                    <option value="system">System</option>
+                    <option value="connector">Connector</option>
+                    <option value="api">API</option>
+                    <option value="auth">Auth</option>
+                    <option value="db">Database</option>
+                  </select>
+                  <select 
+                    value={logFilter.level}
+                    onChange={(e) => setLogFilter({ ...logFilter, level: e.target.value })}
+                    className="bg-zinc-800 border border-zinc-700 rounded px-3 py-1 text-[10px] font-mono uppercase text-zinc-300 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="">Todos los Niveles</option>
+                    <option value="info">Info</option>
+                    <option value="warn">Warn</option>
+                    <option value="error">Error</option>
+                    <option value="debug">Debug</option>
+                  </select>
+                </div>
+                <button onClick={fetchLogs} className="p-1.5 hover:bg-zinc-800 rounded-md transition-colors text-zinc-500">
+                  <Activity size={14} />
+                </button>
+              </div>
+              <div className="max-h-[500px] overflow-y-auto font-mono text-[11px] p-4 space-y-1 bg-black">
+                {logs.map(log => (
+                  <div key={log.id} className="flex gap-4 group hover:bg-zinc-900/50 py-0.5 px-2 rounded">
+                    <span className="text-zinc-600 shrink-0">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                    <span className={cn(
+                      "w-12 shrink-0 font-bold uppercase",
+                      log.level === 'error' ? 'text-red-500' :
+                      log.level === 'warn' ? 'text-yellow-500' :
+                      log.level === 'debug' ? 'text-blue-500' : 'text-emerald-500'
+                    )}>{log.level}</span>
+                    <span className="text-zinc-400 w-20 shrink-0 uppercase">[{log.component}]</span>
+                    <span className="text-zinc-300">{log.message}</span>
+                  </div>
+                ))}
+                {logs.length === 0 && (
+                  <div className="py-12 text-center text-zinc-600 uppercase tracking-widest">
+                    No se encontraron logs para los filtros seleccionados
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
       </div>
     </div>
   );
@@ -1112,6 +1709,38 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
             <div className="prose prose-invert max-w-none text-zinc-400 text-sm leading-relaxed">
               {alert.description}
             </div>
+
+            {alert.category === "Listas de categorizacion" && (
+              <div className="mt-8 space-y-4">
+                <h3 className="text-xs font-mono text-zinc-500 uppercase flex items-center gap-2">
+                  <Shield size={14} />
+                  Evidencias de Categorización
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Mocking evidence display based on what the connector would provide */}
+                  <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-mono text-emerald-500 uppercase">AbuseIPDB</span>
+                      <span className="text-xs font-bold">Score: 85/100</span>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-zinc-500 uppercase">Detalles</p>
+                      <p className="text-xs text-zinc-300">IP reportada por múltiples fuentes como C2/Botnet.</p>
+                    </div>
+                  </div>
+                  <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-mono text-emerald-500 uppercase">URLHaus</span>
+                      <span className="text-xs font-bold">Status: Online</span>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-zinc-500 uppercase">Threat</p>
+                      <p className="text-xs text-zinc-300">Malware Distribution (Emotet)</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="mt-8 pt-8 border-t border-zinc-800 grid grid-cols-2 gap-8">
               <div>

@@ -1,0 +1,12 @@
+providers:
+  - provider_key: urlhaus
+    display_name: "URLHaus (feed)"
+    provider_type: feed
+    endpoint: "https://urlhaus.abuse.ch/downloads/csv/"
+    enabled: true
+    fetch_interval_seconds: 86400
+    ttl_seconds: 86400
+    auth_type: none
+    config_json:
+      csv_columns: ["timestamp", "url", "status", "threat", "tags", "urlhaus_link", "reporter"]
+      date_format: "iso"

@@ -1,15 +1,21 @@
+// Configuración inicial del servidor Express y Base de Datos SQLite
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
 
+// Utilidades para manejar rutas en módulos ES
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Inicialización de la base de datos local
 const db = new Database("surveillance.db");
 
-// Initialize Database Schema
+/**
+ * Inicialización del Esquema de la Base de Datos
+ * Crea todas las tablas necesarias si no existen.
+ */
 db.exec(`
   CREATE TABLE IF NOT EXISTS clients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,46 +119,173 @@ db.exec(`
     config TEXT NOT NULL, -- JSON string
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS provider_configs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_key TEXT UNIQUE NOT NULL,
+    display_name TEXT NOT NULL,
+    enabled INTEGER DEFAULT 0,
+    provider_type TEXT NOT NULL, -- 'dnsbl', 'feed', 'api', 'webhook'
+    endpoint TEXT NOT NULL,
+    auth_type TEXT DEFAULT 'none',
+    auth_payload TEXT DEFAULT '{}', -- JSON string
+    fetch_interval_seconds INTEGER,
+    ttl_seconds INTEGER DEFAULT 86400,
+    last_fetched_at DATETIME,
+    last_hash TEXT,
+    config_json TEXT DEFAULT '{}', -- JSON string
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS provider_config_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider_key TEXT NOT NULL,
+    changed_by TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS system_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS system_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    level TEXT NOT NULL, -- 'info', 'warn', 'error', 'debug'
+    component TEXT NOT NULL, -- 'connector', 'api', 'auth', 'db', 'system'
+    message TEXT NOT NULL,
+    details TEXT, -- JSON string
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
-// Seed initial data if empty
-const clientCount = db.prepare("SELECT COUNT(*) as count FROM clients").get() as { count: number };
-if (clientCount.count === 0) {
-  const insertClient = db.prepare("INSERT INTO clients (name) VALUES (?)");
-  const acmeId = insertClient.run("Acme Corp").lastInsertRowid;
-  const globexId = insertClient.run("Globex").lastInsertRowid;
+  // Inserción de datos iniciales (Seeding) si la base de datos está vacía
+  const clientCount = db.prepare("SELECT COUNT(*) as count FROM clients").get() as { count: number };
+  if (clientCount.count === 0) {
+    // Crear clientes por defecto
+    const insertClient = db.prepare("INSERT INTO clients (name) VALUES (?)");
+    const acmeId = insertClient.run("Acme Corp").lastInsertRowid;
+    const globexId = insertClient.run("Globex").lastInsertRowid;
 
-  const insertUser = db.prepare("INSERT INTO users (username, email, password, role, client_id) VALUES (?, ?, ?, ?, ?)");
-  insertUser.run("admin", "admin@cti-platform.com", "admin123", "super_admin", null);
-  insertUser.run("analyst", "analyst@cti-platform.com", "analyst123", "analyst", null);
-  insertUser.run("acme_user", "contact@acme.com", "acme123", "client", acmeId);
-  insertUser.run("globex_user", "contact@globex.com", "globex123", "client", globexId);
+    // Crear usuarios iniciales con diferentes roles
+    const insertUser = db.prepare("INSERT INTO users (username, email, password, role, client_id) VALUES (?, ?, ?, ?, ?)");
+    insertUser.run("admin", "admin@cti-platform.com", "admin123", "super_admin", null);
+    insertUser.run("analyst", "analyst@cti-platform.com", "analyst123", "analyst", null);
+    insertUser.run("acme_user", "contact@acme.com", "acme123", "client", acmeId);
+    insertUser.run("globex_user", "contact@globex.com", "globex123", "client", globexId);
 
-  const insertAlert = db.prepare("INSERT INTO alerts (client_id, client_alert_id, category, title, description, severity) VALUES (?, ?, ?, ?, ?, ?)");
-  
-  const categories = [
-    "Exposicion de informacion",
-    "Fugas de credenciales",
-    "Exposicion de sistemas y vulnerabilidades",
-    "Monitorizacion de dominios",
-    "Monitorizacion Web / Defacement",
-    "Listas de categorizacion",
-    "Contenidos ofensivos",
-    "Abuso y suplantacion de marca",
-    "Fraude de aplicaciones",
-    "Exposicion Bancaria y carding"
-  ];
+    const insertAlert = db.prepare("INSERT INTO alerts (client_id, client_alert_id, category, title, description, severity) VALUES (?, ?, ?, ?, ?, ?)");
+    
+    // Categorías oficiales del sistema
+    const categories = [
+      "Exposicion de informacion",
+      "Fugas de credenciales",
+      "Exposicion de sistemas y vulnerabilidades",
+      "Monitorizacion de dominios",
+      "Monitorizacion Web / Defacement",
+      "Listas de categorizacion",
+      "Contenidos ofensivos",
+      "Abuso y suplantacion de marca",
+      "Fraude de aplicaciones",
+      "Exposicion Bancaria y carding"
+    ];
 
-  // Acme Alerts
-  categories.forEach((cat, index) => {
-    insertAlert.run(acmeId, index + 1, cat, `Incidente de ${cat} detectado`, `Descripción detallada para la categoría ${cat} en Acme Corp.`, index % 4 === 0 ? 'critical' : index % 3 === 0 ? 'high' : 'medium');
-  });
+    // Generar alertas de ejemplo para Acme
+    categories.forEach((cat, index) => {
+      insertAlert.run(acmeId, index + 1, cat, `Incidente de ${cat} detectado`, `Descripción detallada para la categoría ${cat} en Acme Corp.`, index % 4 === 0 ? 'critical' : index % 3 === 0 ? 'high' : 'medium');
+    });
 
-  // Globex Alerts
-  categories.forEach((cat, index) => {
-    insertAlert.run(globexId, index + 1, cat, `Alerta de ${cat} en Globex`, `Análisis técnico de la amenaza de ${cat} para Globex.`, index % 2 === 0 ? 'high' : 'low');
-  });
-}
+    // Generar alertas de ejemplo para Globex
+    categories.forEach((cat, index) => {
+      insertAlert.run(globexId, index + 1, cat, `Alerta de ${cat} en Globex`, `Análisis técnico de la amenaza de ${cat} para Globex.`, index % 2 === 0 ? 'high' : 'low');
+    });
+  }
+
+  const providerCount = db.prepare("SELECT COUNT(*) as count FROM provider_configs").get() as { count: number };
+  if (providerCount.count === 0) {
+    const insertProvider = db.prepare(`
+      INSERT INTO provider_configs (provider_key, display_name, enabled, provider_type, endpoint, auth_type, auth_payload, config_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    
+    insertProvider.run(
+      'urlhaus', 
+      'URLHaus (feed)', 
+      1, 
+      'feed', 
+      'https://urlhaus.abuse.ch/downloads/csv/', 
+      'none', 
+      '{}', 
+      JSON.stringify({ csv_columns: ["timestamp", "url", "md5", "domain"], date_format: "iso" })
+    );
+
+    insertProvider.run(
+      'abuseipdb', 
+      'AbuseIPDB (API)', 
+      0, 
+      'api', 
+      'https://api.abuseipdb.com/api/v2/check', 
+      'api_key', 
+      JSON.stringify({ api_key: "" }), 
+      JSON.stringify({ rate_limit_per_minute: 60 })
+    );
+
+    insertProvider.run(
+      'otx', 
+      'OTX (API)', 
+      0, 
+      'api', 
+      'https://otx.alienvault.com/api/v1/indicators/', 
+      'api_key', 
+      JSON.stringify({ api_key: "" }), 
+      '{}'
+    );
+
+    insertProvider.run(
+      'spamhaus_dnsbl', 
+      'Spamhaus ZEN', 
+      0, 
+      'dnsbl', 
+      'zen.spamhaus.org', 
+      'none', 
+      '{}', 
+      JSON.stringify({ force_license_ack: false })
+    );
+  }
+
+  const settingsCount = db.prepare("SELECT COUNT(*) as count FROM system_settings").get() as { count: number };
+  if (settingsCount.count === 0) {
+    const insertSetting = db.prepare("INSERT INTO system_settings (key, value) VALUES (?, ?)");
+    insertSetting.run('language', 'es');
+    insertSetting.run('theme', 'dark');
+    insertSetting.run('session_timeout', '3600');
+    insertSetting.run('category_labels', JSON.stringify({
+      "Exposicion de informacion": "Exposición de Información",
+      "Fugas de credenciales": "Fugas de Credenciales",
+      "Exposicion de sistemas y vulnerabilidades": "Sistemas y Vulnerabilidades",
+      "Monitorizacion de dominios": "Monitorización de Dominios",
+      "Monitorizacion Web / Defacement": "Web / Defacement",
+      "Listas de categorizacion": "Listas de Categorización",
+      "Contenidos ofensivos": "Contenidos Ofensivos",
+      "Abuso y suplantacion de marca": "Abuso de Marca",
+      "Fraude de aplicaciones": "Fraude de Apps",
+      "Exposicion Bancaria y carding": "Banca y Carding"
+    }));
+  }
+
+  const logsCount = db.prepare("SELECT COUNT(*) as count FROM system_logs").get() as { count: number };
+  if (logsCount.count === 0) {
+    const insertLog = db.prepare("INSERT INTO system_logs (level, component, message) VALUES (?, ?, ?)");
+    insertLog.run('info', 'system', 'Sistema iniciado correctamente');
+    insertLog.run('info', 'connector', 'Conector URLHaus sincronizado: 1250 nuevos indicadores');
+    insertLog.run('warn', 'auth', 'Intento de login fallido para usuario: root');
+    insertLog.run('error', 'connector', 'Error de conexión con AbuseIPDB: Timeout');
+    insertLog.run('debug', 'db', 'Query optimizada: SELECT * FROM alerts WHERE status = "new"');
+  }
 
 const CATEGORIES = [
   "Exposicion de informacion",
@@ -167,26 +300,40 @@ const CATEGORIES = [
   "Exposicion Bancaria y carding"
 ];
 
+/**
+ * Función principal para arrancar el servidor Express
+ */
 async function startServer() {
   const app = express();
   app.use(express.json());
 
-  // API Routes
+  // --- RUTAS DE LA API ---
+
+  /**
+   * Obtener información del usuario actual (Simulación de sesión)
+   * Se utiliza el header 'x-user' para identificar al usuario en esta demo.
+   */
   app.get("/api/me", (req, res) => {
     const username = req.headers["x-user"] || "admin";
     const user = db.prepare("SELECT users.*, clients.name as client_name FROM users LEFT JOIN clients ON users.client_id = clients.id WHERE username = ?").get(username) as any;
     if (user) {
-      // Log access on every "me" call as a proxy for session activity
+      // Registrar acceso en logs de auditoría
       db.prepare("INSERT INTO access_logs (user_id, action, ip) VALUES (?, ?, ?)").run(user.id, 'API_ACCESS', req.ip);
     }
     res.json(user);
   });
 
+  /**
+   * Listar todos los usuarios del sistema
+   */
   app.get("/api/users", (req, res) => {
     const users = db.prepare("SELECT users.*, clients.name as client_name FROM users LEFT JOIN clients ON users.client_id = clients.id").all();
     res.json(users);
   });
 
+  /**
+   * Crear un nuevo usuario con contraseña temporal
+   */
   app.post("/api/users", (req, res) => {
     const { username, email, role, client_id } = req.body;
     const tempPassword = Math.random().toString(36).slice(-8);
@@ -474,14 +621,167 @@ app.patch("/api/alerts/:id", async (req, res) => {
     res.json({ success: true });
   });
 
-  // Vite middleware for development
+  // Categorization Connector API
+  app.get("/api/connectors/categorization/providers", (req, res) => {
+    const providers = db.prepare("SELECT * FROM provider_configs").all();
+    res.json(providers.map((p: any) => ({
+      ...p,
+      enabled: p.enabled === 1,
+      auth_payload: JSON.parse(p.auth_payload),
+      config_json: JSON.parse(p.config_json)
+    })));
+  });
+
+  app.post("/api/connectors/categorization/providers", (req, res) => {
+    const { provider_key, display_name, enabled, provider_type, endpoint, auth_type, auth_payload, fetch_interval_seconds, ttl_seconds, config_json } = req.body;
+    try {
+      db.prepare(`
+        INSERT INTO provider_configs (provider_key, display_name, enabled, provider_type, endpoint, auth_type, auth_payload, fetch_interval_seconds, ttl_seconds, config_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        provider_key, 
+        display_name, 
+        enabled ? 1 : 0, 
+        provider_type, 
+        endpoint, 
+        auth_type, 
+        JSON.stringify(auth_payload || {}), 
+        fetch_interval_seconds, 
+        ttl_seconds, 
+        JSON.stringify(config_json || {})
+      );
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/connectors/categorization/providers/:key", (req, res) => {
+    const { display_name, enabled, endpoint, auth_type, auth_payload, fetch_interval_seconds, ttl_seconds, config_json } = req.body;
+    const provider_key = req.params.key;
+    
+    // Audit log (simplified)
+    const old = db.prepare("SELECT * FROM provider_configs WHERE provider_key = ?").get(provider_key) as any;
+    if (old) {
+      db.prepare("INSERT INTO provider_config_audit (provider_key, old_value, new_value) VALUES (?, ?, ?)")
+        .run(provider_key, JSON.stringify(old), JSON.stringify(req.body));
+    }
+
+    db.prepare(`
+      UPDATE provider_configs SET
+        display_name = COALESCE(?, display_name),
+        enabled = COALESCE(?, enabled),
+        endpoint = COALESCE(?, endpoint),
+        auth_type = COALESCE(?, auth_type),
+        auth_payload = COALESCE(?, auth_payload),
+        fetch_interval_seconds = COALESCE(?, fetch_interval_seconds),
+        ttl_seconds = COALESCE(?, ttl_seconds),
+        config_json = COALESCE(?, config_json),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE provider_key = ?
+    `).run(
+      display_name,
+      enabled !== undefined ? (enabled ? 1 : 0) : null,
+      endpoint,
+      auth_type,
+      auth_payload ? JSON.stringify(auth_payload) : null,
+      fetch_interval_seconds,
+      ttl_seconds,
+      config_json ? JSON.stringify(config_json) : null,
+      provider_key
+    );
+    res.json({ success: true });
+  });
+
+  app.post("/api/connectors/categorization/reload", (req, res) => {
+    // Simulate reload
+    res.json({ status: "success", timestamp: new Date().toISOString() });
+  });
+
+  app.get("/api/connectors/categorization/providers/:key/config", (req, res) => {
+    const provider = db.prepare("SELECT * FROM provider_configs WHERE provider_key = ?").get(req.params.key) as any;
+    if (!provider) return res.status(404).json({ error: "Not found" });
+    
+    const config = {
+      ...provider,
+      enabled: provider.enabled === 1,
+      auth_payload: JSON.parse(provider.auth_payload),
+      config_json: JSON.parse(provider.config_json)
+    };
+
+    // Mask sensitive data
+    if (config.auth_payload) {
+      Object.keys(config.auth_payload).forEach(k => {
+        config.auth_payload[k] = "********";
+      });
+    }
+
+    res.json(config);
+  });
+
+  // System Settings API
+  app.get("/api/system/settings", (req, res) => {
+    const settings = db.prepare("SELECT * FROM system_settings").all();
+    const result: any = {};
+    settings.forEach((s: any) => {
+      try {
+        result[s.key] = JSON.parse(s.value);
+      } catch {
+        result[s.key] = s.value;
+      }
+    });
+    res.json(result);
+  });
+
+  app.post("/api/system/settings", (req, res) => {
+    const settings = req.body;
+    const upsert = db.prepare("INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)");
+    const transaction = db.transaction((data) => {
+      for (const [key, value] of Object.entries(data)) {
+        upsert.run(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+      }
+    });
+    transaction(settings);
+    res.json({ success: true });
+  });
+
+  // System Logs API
+  app.get("/api/system/logs", (req, res) => {
+    const { component, level, limit = 100 } = req.query;
+    let query = "SELECT * FROM system_logs";
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    if (component) {
+      conditions.push("component = ?");
+      params.push(component);
+    }
+    if (level) {
+      conditions.push("level = ?");
+      params.push(level);
+    }
+
+    if (conditions.length > 0) {
+      query += " WHERE " + conditions.join(" AND ");
+    }
+
+    query += " ORDER BY timestamp DESC LIMIT ?";
+    params.push(Number(limit));
+
+    const logs = db.prepare(query).all(...params);
+    res.json(logs);
+  });
+
+  // --- CONFIGURACIÓN DE VITE / PRODUCCIÓN ---
   if (process.env.NODE_ENV !== "production") {
+    // En desarrollo, usamos el middleware de Vite para HMR y compilación al vuelo
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
+    // En producción, servimos los archivos estáticos de la carpeta 'dist'
     app.use(express.static(path.join(__dirname, "dist")));
     app.get("*", (req, res) => {
       res.sendFile(path.join(__dirname, "dist", "index.html"));
@@ -490,7 +790,7 @@ app.patch("/api/alerts/:id", async (req, res) => {
 
   const PORT = 3000;
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Servidor escuchando en http://localhost:${PORT}`);
   });
 }
 

@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:password@postgres:5432/categorization
+      - REDIS_URL=redis://redis:6379/0
+      - ADMIN_API_TOKEN=changeme_admin_token
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - .:/app
+
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=categorization
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # vault:
+  #   image: hashicorp/vault:1.13
+  #   ports:
+  #     - "8200:8200"
+  #   environment:
+  #     - VAULT_DEV_ROOT_TOKEN_ID=root
+  #     - VAULT_ADDR=http://0.0.0.0:8200

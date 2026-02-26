@@ -1,0 +1,30 @@
+providers:
+  - provider_key: urlhaus
+    display_name: "URLHaus (feed)"
+    provider_type: feed
+    endpoint: "https://urlhaus.abuse.ch/downloads/csv/"
+    enabled: true
+    fetch_interval_seconds: 86400
+    ttl_seconds: 86400
+    auth_type: none
+    config_json:
+      csv_columns: ["timestamp", "url", "status", "threat", "tags", "urlhaus_link", "reporter"]
+      date_format: "iso"
+  - provider_key: abuseipdb
+    display_name: "AbuseIPDB (API)"
+    provider_type: api
+    endpoint: "https://api.abuseipdb.com/api/v2/check"
+    enabled: false
+    ttl_seconds: 86400
+    auth_type: api_key
+    config_json:
+      rate_limit_per_minute: 60
+  - provider_key: spamhaus_dnsbl
+    display_name: "Spamhaus ZEN"
+    provider_type: dnsbl
+    endpoint: "zen.spamhaus.org"
+    enabled: false
+    ttl_seconds: 86400
+    auth_type: none
+    config_json:
+      force_license_ack: false
