@@ -76,6 +76,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     client_id INTEGER NOT NULL,
+    client_alert_id INTEGER NOT NULL,
     category TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT,
@@ -95,6 +96,23 @@ db.exec(`
     FOREIGN KEY (alert_id) REFERENCES alerts(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    type TEXT NOT NULL, -- 'alert_new', 'alert_update'
+    is_read INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS user_dashboard_config (
+    user_id INTEGER PRIMARY KEY,
+    config TEXT NOT NULL, -- JSON string
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
 `);
 
 // Seed initial data if empty
@@ -110,10 +128,30 @@ if (clientCount.count === 0) {
   insertUser.run("acme_user", "contact@acme.com", "acme123", "client", acmeId);
   insertUser.run("globex_user", "contact@globex.com", "globex123", "client", globexId);
 
-  const insertAlert = db.prepare("INSERT INTO alerts (client_id, category, title, description, severity) VALUES (?, ?, ?, ?, ?)");
-  insertAlert.run(acmeId, "Fugas de credenciales", "Detected 50 leaked credentials on Pastebin", "Multiple emails from @acme.com found in a recent dump.", "high");
-  insertAlert.run(acmeId, "Abusoy suplantacion de marca", "Phishing domain detected: acme-support.com", "A new domain mimicking the official support page was registered.", "critical");
-  insertAlert.run(globexId, "Monitorizacion Web / Defacement", "Potential defacement on blog.globex.com", "Unusual changes detected in the main page HTML structure.", "medium");
+  const insertAlert = db.prepare("INSERT INTO alerts (client_id, client_alert_id, category, title, description, severity) VALUES (?, ?, ?, ?, ?, ?)");
+  
+  const categories = [
+    "Exposicion de informacion",
+    "Fugas de credenciales",
+    "Exposicion de sistemas y vulnerabilidades",
+    "Monitorizacion de dominios",
+    "Monitorizacion Web / Defacement",
+    "Listas de categorizacion",
+    "Contenidos ofensivos",
+    "Abuso y suplantacion de marca",
+    "Fraude de aplicaciones",
+    "Exposicion Bancaria y carding"
+  ];
+
+  // Acme Alerts
+  categories.forEach((cat, index) => {
+    insertAlert.run(acmeId, index + 1, cat, `Incidente de ${cat} detectado`, `Descripción detallada para la categoría ${cat} en Acme Corp.`, index % 4 === 0 ? 'critical' : index % 3 === 0 ? 'high' : 'medium');
+  });
+
+  // Globex Alerts
+  categories.forEach((cat, index) => {
+    insertAlert.run(globexId, index + 1, cat, `Alerta de ${cat} en Globex`, `Análisis técnico de la amenaza de ${cat} para Globex.`, index % 2 === 0 ? 'high' : 'low');
+  });
 }
 
 const CATEGORIES = [
@@ -241,9 +279,28 @@ async function startServer() {
     res.json({ ...alert, comments });
   });
 
-  app.patch("/api/alerts/:id", (req, res) => {
+// Mock email service
+async function sendEmailNotification(to: string, subject: string, body: string) {
+  console.log(`[EMAIL_SERVICE] Sending to ${to}: ${subject}`);
+  // In a real app, use nodemailer, SendGrid, etc.
+}
+
+app.patch("/api/alerts/:id", async (req, res) => {
     const { status, severity } = req.body;
     db.prepare("UPDATE alerts SET status = COALESCE(?, status), severity = COALESCE(?, severity) WHERE id = ?").run(status, severity, req.params.id);
+    
+    // Create notification for analysts
+    const alert = db.prepare("SELECT title FROM alerts WHERE id = ?").get(req.params.id) as any;
+    const analysts = db.prepare("SELECT id, email FROM users WHERE role IN ('super_admin', 'analyst')").all() as any[];
+    const insertNotify = db.prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, ?, ?, ?)");
+    
+    for (const analyst of analysts) {
+      insertNotify.run(analyst.id, "Alerta Actualizada", `La alerta "${alert.title}" ha sido actualizada.`, 'alert_update');
+      if (analyst.email) {
+        await sendEmailNotification(analyst.email, "VIGILANCIA_CTI: Alerta Actualizada", `La alerta "${alert.title}" ha sido actualizada a estado ${status || 'sin cambios'} y severidad ${severity || 'sin cambios'}.`);
+      }
+    }
+
     res.json({ success: true });
   });
 
@@ -315,8 +372,106 @@ async function startServer() {
       by_severity: db.prepare("SELECT severity, COUNT(*) as count FROM alerts GROUP BY severity").all(),
       by_status: db.prepare("SELECT status, COUNT(*) as count FROM alerts GROUP BY status").all(),
       by_category: db.prepare("SELECT category, COUNT(*) as count FROM alerts GROUP BY category").all(),
+      trends: db.prepare("SELECT category, COUNT(*) as count, strftime('%Y-%m-%d', created_at) as date FROM alerts GROUP BY category, date ORDER BY date ASC").all(),
     };
     res.json(stats);
+  });
+
+  // Notifications API
+  app.get("/api/notifications", (req, res) => {
+    const username = req.headers["x-user"] || "admin";
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as any;
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const notifications = db.prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50").all(user.id);
+    res.json(notifications);
+  });
+
+  app.patch("/api/notifications/:id", (req, res) => {
+    db.prepare("UPDATE notifications SET is_read = 1 WHERE id = ?").run(req.params.id);
+    res.json({ success: true });
+  });
+
+  // Advanced Search API
+  app.get("/api/alerts/search", (req, res) => {
+    const { q, client_id, category, status, severity, date_from, date_to } = req.query;
+    const username = req.headers["x-user"] || "admin";
+    const currentUser = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
+    
+    if (!currentUser) return res.status(401).json({ error: "Unauthorized" });
+
+    let query = `
+      SELECT DISTINCT alerts.*, clients.name as client_name 
+      FROM alerts 
+      JOIN clients ON alerts.client_id = clients.id
+      LEFT JOIN comments ON alerts.id = comments.alert_id
+    `;
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    if (currentUser.role === 'client') {
+      conditions.push("alerts.client_id = ?");
+      params.push(currentUser.client_id);
+    } else if (client_id) {
+      conditions.push("alerts.client_id = ?");
+      params.push(client_id);
+    }
+
+    if (category) {
+      conditions.push("alerts.category = ?");
+      params.push(category);
+    }
+
+    if (status) {
+      conditions.push("alerts.status = ?");
+      params.push(status);
+    }
+
+    if (severity) {
+      conditions.push("alerts.severity = ?");
+      params.push(severity);
+    }
+
+    if (date_from) {
+      conditions.push("alerts.created_at >= ?");
+      params.push(date_from);
+    }
+
+    if (date_to) {
+      conditions.push("alerts.created_at <= ?");
+      params.push(date_to);
+    }
+
+    if (q) {
+      conditions.push("(alerts.title LIKE ? OR alerts.description LIKE ? OR comments.content LIKE ?)");
+      const searchPattern = `%${q}%`;
+      params.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    if (conditions.length > 0) {
+      query += " WHERE " + conditions.join(" AND ");
+    }
+
+    query += " ORDER BY alerts.created_at DESC";
+    const alerts = db.prepare(query).all(...params);
+    res.json(alerts);
+  });
+
+  // Dashboard Config API
+  app.get("/api/dashboard/config", (req, res) => {
+    const username = req.headers["x-user"] || "admin";
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as any;
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const config = db.prepare("SELECT config FROM user_dashboard_config WHERE user_id = ?").get(user.id) as any;
+    res.json(config ? JSON.parse(config.config) : { widgets: ['summary', 'trends', 'recent_alerts'] });
+  });
+
+  app.post("/api/dashboard/config", (req, res) => {
+    const { config } = req.body;
+    const username = req.headers["x-user"] || "admin";
+    const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as any;
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    db.prepare("INSERT OR REPLACE INTO user_dashboard_config (user_id, config) VALUES (?, ?)").run(user.id, JSON.stringify(config));
+    res.json({ success: true });
   });
 
   // Vite middleware for development

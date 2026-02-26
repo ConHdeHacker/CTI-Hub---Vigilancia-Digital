@@ -60,6 +60,7 @@ export interface ClientConfig {
 export interface Alert {
   id: number;
   client_id: number;
+  client_alert_id: number;
   client_name: string;
   category: string;
   title: string;

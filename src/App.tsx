@@ -21,11 +21,23 @@ import {
   Hash,
   FileWarning,
   Eye,
-  Cpu
+  Cpu,
+  Bell,
+  X,
+  Calendar,
+  Layout,
+  CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
 import { User, Client, Alert, Comment, ClientModule } from './types';
-import { CATEGORIES, STATUS_LABELS, SEVERITY_COLORS } from './constants';
+import { CATEGORIES, STATUS_LABELS, SEVERITY_COLORS, STATUS_COLORS } from './constants';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -39,6 +51,21 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [currentUserRole, setCurrentUserRole] = useState<string>('admin'); // For demo toggling
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [dashboardConfig, setDashboardConfig] = useState<{ widgets: string[] }>({ widgets: ['summary', 'trends', 'recent_alerts'] });
+  const [searchParams, setSearchParams] = useState({
+    q: '',
+    client_id: '',
+    category: '',
+    status: '',
+    severity: '',
+    date_from: '',
+    date_to: ''
+  });
+  const [searchResults, setSearchResults] = useState<Alert[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -47,10 +74,52 @@ export default function App() {
       await fetchClients();
       await fetchUserConfig();
       await fetchAlerts();
+      await fetchNotifications();
+      await fetchDashboardConfig();
       setLoading(false);
     };
     init();
   }, [currentUserRole]);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch('/api/notifications', { headers: { 'x-user': currentUserRole } });
+      const data = await res.json();
+      setNotifications(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setNotifications([]);
+    }
+  };
+
+  const fetchDashboardConfig = async () => {
+    const res = await fetch('/api/dashboard/config', { headers: { 'x-user': currentUserRole } });
+    const data = await res.json();
+    setDashboardConfig(data);
+  };
+
+  const handleMarkAsRead = async (id: number) => {
+    await fetch(`/api/notifications/${id}`, { method: 'PATCH' });
+    fetchNotifications();
+  };
+
+  const handleAdvancedSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIsSearching(true);
+    try {
+      const params = new URLSearchParams(searchParams as any);
+      const res = await fetch(`/api/alerts/search?${params.toString()}`, { headers: { 'x-user': currentUserRole } });
+      const data = await res.json();
+      const results = Array.isArray(data) ? data : [];
+      setSearchResults(results);
+      setAlerts(results);
+    } catch (e) {
+      setSearchResults([]);
+      setAlerts([]);
+    }
+    setIsSearching(false);
+    setView('alerts'); // Switch to alerts view to show results
+    setShowSearchModal(false);
+  };
 
   useEffect(() => {
     fetchAlerts();
@@ -64,23 +133,35 @@ export default function App() {
   };
 
   const fetchUserConfig = async () => {
-    const res = await fetch('/api/my-config', { headers: { 'x-user': currentUserRole } });
-    const data = await res.json();
-    const active = data.modules.filter((m: any) => m.is_active === 1).map((m: any) => m.module_name);
-    setActiveModules(active);
+    try {
+      const res = await fetch('/api/my-config', { headers: { 'x-user': currentUserRole } });
+      const data = await res.json();
+      const active = (data?.modules || []).filter((m: any) => m.is_active === 1).map((m: any) => m.module_name);
+      setActiveModules(active);
+    } catch (e) {
+      setActiveModules([]);
+    }
   };
 
   const fetchAlerts = async () => {
-    const categoryParam = selectedCategory ? `&category=${encodeURIComponent(selectedCategory)}` : '';
-    const res = await fetch(`/api/alerts?role=${user?.role || currentUserRole}&client_id=${user?.client_id || ''}${categoryParam}`, { headers: { 'x-user': currentUserRole } });
-    const data = await res.json();
-    setAlerts(data);
+    try {
+      const categoryParam = selectedCategory ? `&category=${encodeURIComponent(selectedCategory)}` : '';
+      const res = await fetch(`/api/alerts?role=${user?.role || currentUserRole}&client_id=${user?.client_id || ''}${categoryParam}`, { headers: { 'x-user': currentUserRole } });
+      const data = await res.json();
+      setAlerts(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setAlerts([]);
+    }
   };
 
   const fetchClients = async () => {
-    const res = await fetch('/api/clients');
-    const data = await res.json();
-    setClients(data);
+    try {
+      const res = await fetch('/api/clients');
+      const data = await res.json();
+      setClients(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setClients([]);
+    }
   };
 
   const handleAlertClick = (id: number) => {
@@ -230,7 +311,7 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-8 bg-[#0a0a0a]">
+        <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-8 bg-[#0a0a0a] z-50">
           <div className="flex items-center gap-4">
             <h2 className="text-sm font-mono text-zinc-400 uppercase tracking-widest">
               {view === 'dashboard' && 'System Overview'}
@@ -239,15 +320,91 @@ export default function App() {
               {view === 'alert_detail' && `Alert #${selectedAlertId}`}
             </h2>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={14} />
               <input 
                 type="text" 
-                placeholder="Search..." 
+                placeholder="Búsqueda rápida..." 
+                value={searchParams.q}
+                onChange={(e) => setSearchParams({ ...searchParams, q: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && handleAdvancedSearch()}
                 className="bg-zinc-900 border border-zinc-800 rounded px-9 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50 w-64"
               />
+              <button 
+                onClick={() => setShowSearchModal(true)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 hover:text-emerald-400 font-mono"
+              >
+                ADV
+              </button>
             </div>
+
+            <div className="relative">
+              <button 
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
+              >
+                <Bell size={18} />
+                {(Array.isArray(notifications) ? notifications : []).filter(n => !n.is_read).length > 0 && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-[#0a0a0a]" />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {showNotifications && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-80 bg-[#0d0d0d] border border-zinc-800 rounded-xl shadow-2xl z-50 overflow-hidden"
+                    >
+                      <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
+                        <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400">Notificaciones</h3>
+                        <span className="text-[10px] font-mono text-zinc-600">{notifications.length} TOTAL</span>
+                      </div>
+                      <div className="max-h-[400px] overflow-y-auto">
+                        {notifications.length > 0 ? (
+                          notifications.map(n => (
+                            <div 
+                              key={n.id} 
+                              className={cn(
+                                "p-4 border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors cursor-pointer relative group",
+                                !n.is_read && "bg-emerald-500/5"
+                              )}
+                              onClick={() => handleMarkAsRead(n.id)}
+                            >
+                              <div className="flex gap-3">
+                                <div className={cn(
+                                  "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                                  n.type === 'alert_new' ? "bg-red-500/10 text-red-500" : "bg-blue-500/10 text-blue-500"
+                                )}>
+                                  {n.type === 'alert_new' ? <AlertTriangle size={14} /> : <Activity size={14} />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-bold truncate">{n.title}</p>
+                                  <p className="text-[10px] text-zinc-500 line-clamp-2 mt-0.5">{n.message}</p>
+                                  <p className="text-[9px] text-zinc-600 font-mono mt-2">{new Date(n.created_at).toLocaleString()}</p>
+                                </div>
+                                {!n.is_read && (
+                                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mt-1" />
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-8 text-center text-zinc-600 text-xs font-mono">
+                            NO_NOTIFICATIONS_FOUND
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+
             <div className="w-px h-4 bg-zinc-800" />
             <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500">
               <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
@@ -255,6 +412,118 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {/* Advanced Search Modal */}
+        <AnimatePresence>
+          {showSearchModal && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+                onClick={() => setShowSearchModal(false)}
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="relative w-full max-w-2xl bg-[#0d0d0d] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
+              >
+                <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <Search className="text-emerald-500" size={20} />
+                    <h3 className="text-lg font-bold">Búsqueda Avanzada</h3>
+                  </div>
+                  <button onClick={() => setShowSearchModal(false)} className="text-zinc-500 hover:text-zinc-100">
+                    <X size={20} />
+                  </button>
+                </div>
+                <form onSubmit={handleAdvancedSearch} className="p-8 space-y-6">
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Palabras Clave</label>
+                      <input 
+                        type="text" 
+                        value={searchParams.q}
+                        onChange={(e) => setSearchParams({ ...searchParams, q: e.target.value })}
+                        placeholder="Título, descripción, comentarios..."
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Cliente</label>
+                      <select 
+                        value={searchParams.client_id}
+                        onChange={(e) => setSearchParams({ ...searchParams, client_id: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+                      >
+                        <option value="">Todos los Clientes</option>
+                        {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Categoría</label>
+                      <select 
+                        value={searchParams.category}
+                        onChange={(e) => setSearchParams({ ...searchParams, category: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+                      >
+                        <option value="">Todas las Categorías</option>
+                        {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Estado</label>
+                      <select 
+                        value={searchParams.status}
+                        onChange={(e) => setSearchParams({ ...searchParams, status: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+                      >
+                        <option value="">Todos los Estados</option>
+                        {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Desde</label>
+                      <input 
+                        type="date" 
+                        value={searchParams.date_from}
+                        onChange={(e) => setSearchParams({ ...searchParams, date_from: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Hasta</label>
+                      <input 
+                        type="date" 
+                        value={searchParams.date_to}
+                        onChange={(e) => setSearchParams({ ...searchParams, date_to: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-4 pt-4">
+                    <button 
+                      type="button"
+                      onClick={() => setSearchParams({ q: '', client_id: '', category: '', status: '', severity: '', date_from: '', date_to: '' })}
+                      className="px-6 py-2.5 rounded-lg text-sm font-bold text-zinc-500 hover:text-zinc-100 transition-colors"
+                    >
+                      Limpiar
+                    </button>
+                    <button 
+                      type="submit"
+                      className="bg-emerald-500 hover:bg-emerald-600 text-black px-8 py-2.5 rounded-lg text-sm font-bold transition-all flex items-center gap-2"
+                    >
+                      <Search size={18} />
+                      Buscar Alertas
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
 
         <div className="flex-1 overflow-y-auto p-8">
           <AnimatePresence mode="wait">
@@ -265,7 +534,19 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <Dashboard stats={{ alerts }} />
+                <Dashboard 
+                  stats={{ alerts }} 
+                  config={dashboardConfig} 
+                  user={user}
+                  onUpdateConfig={async (newConfig) => {
+                    setDashboardConfig(newConfig);
+                    await fetch('/api/dashboard/config', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ config: newConfig })
+                    });
+                  }}
+                />
               </motion.div>
             )}
 
@@ -287,6 +568,7 @@ export default function App() {
                     setAlerts(data);
                   }}
                   selectedCategory={selectedCategory}
+                  user={user}
                 />
               </motion.div>
             )}
@@ -384,69 +666,208 @@ function SidebarItem({ icon, label, active = false, onClick, trailing }: { icon:
   );
 }
 
-function Dashboard({ stats }: { stats: { alerts: Alert[] } }) {
-  const totalAlerts = stats.alerts.length;
-  const criticalAlerts = stats.alerts.filter(a => a.severity === 'critical').length;
-  const resolvedAlerts = stats.alerts.filter(a => a.status === 'resolved').length;
+function Dashboard({ stats, config, onUpdateConfig, user }: { stats: { alerts: Alert[] }, config: { widgets: string[] }, onUpdateConfig: (newConfig: any) => void, user: User | null }) {
+  const [showConfig, setShowConfig] = useState(false);
+  const alerts = Array.isArray(stats.alerts) ? stats.alerts : [];
+  const totalAlerts = alerts.length;
+  const criticalAlerts = alerts.filter(a => a.severity === 'critical').length;
+  const resolvedAlerts = alerts.filter(a => a.status === 'resolved').length;
+  const inProgressAlerts = alerts.filter(a => a.status === 'in_progress').length;
+
+  const [trendData, setTrendData] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/stats')
+      .then(res => res.json())
+      .then(data => {
+        // Format trend data for Recharts
+        const formatted = data.trends.reduce((acc: any[], curr: any) => {
+          const existing = acc.find(item => item.date === curr.date);
+          if (existing) {
+            existing[curr.category] = curr.count;
+          } else {
+            acc.push({ date: curr.date, [curr.category]: curr.count });
+          }
+          return acc;
+        }, []);
+        setTrendData(formatted);
+      });
+  }, []);
+
+  const toggleWidget = (widget: string) => {
+    const newWidgets = config.widgets.includes(widget)
+      ? config.widgets.filter(w => w !== widget)
+      : [...config.widgets, widget];
+    onUpdateConfig({ ...config, widgets: newWidgets });
+  };
+
+  const widgetOptions = [
+    { id: 'summary', label: 'Resumen de Estados', icon: <Layout size={14} /> },
+    { id: 'trends', label: 'Tendencias de Categorías', icon: <Activity size={14} /> },
+    { id: 'recent_alerts', label: 'Alertas Recientes', icon: <Clock size={14} /> },
+    { id: 'severity_dist', label: 'Distribución de Severidad', icon: <AlertTriangle size={14} /> }
+  ];
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Panel de Control</h1>
+          <p className="text-sm text-zinc-500">Resumen ejecutivo y métricas de seguridad.</p>
+        </div>
+        <button 
+          onClick={() => setShowConfig(!showConfig)}
+          className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-bold hover:bg-zinc-800 transition-colors"
+        >
+          <Settings size={14} />
+          Personalizar Panel
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {showConfig && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 mb-8">
+              <h3 className="text-xs font-mono text-zinc-500 uppercase mb-4">Seleccionar Widgets</h3>
+              <div className="flex flex-wrap gap-4">
+                {widgetOptions.map(opt => (
+                  <button
+                    key={opt.id}
+                    onClick={() => toggleWidget(opt.id)}
+                    className={cn(
+                      "flex items-center gap-3 px-4 py-2.5 rounded-lg border text-xs font-medium transition-all",
+                      config.widgets.includes(opt.id)
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                        : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700"
+                    )}
+                  >
+                    {opt.icon}
+                    {opt.label}
+                    {config.widgets.includes(opt.id) && <CheckCircle2 size={14} className="ml-2" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatCard label="Total Alertas" value={totalAlerts} icon={<AlertTriangle className="text-zinc-400" />} />
         <StatCard label="Críticas" value={criticalAlerts} icon={<Activity className="text-red-400" />} />
+        <StatCard label="En Progreso" value={inProgressAlerts} icon={<Clock className="text-yellow-400" />} />
         <StatCard label="Resueltas" value={resolvedAlerts} icon={<Shield className="text-emerald-400" />} />
-        <StatCard label="Tiempo Promedio" value="4.2h" icon={<Clock className="text-blue-400" />} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
-          <h3 className="text-xs font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2">
-            <Activity size={14} />
-            Distribución por Categoría
-          </h3>
-          <div className="space-y-4">
-            {CATEGORIES.slice(0, 5).map(cat => {
-              const count = stats.alerts.filter(a => a.category === cat).length;
-              const percentage = totalAlerts > 0 ? (count / totalAlerts) * 100 : 0;
-              return (
-                <div key={cat} className="space-y-1.5">
-                  <div className="flex justify-between text-[11px] font-mono">
-                    <span className="text-zinc-400">{cat}</span>
-                    <span className="text-zinc-500">{count}</span>
-                  </div>
-                  <div className="h-1 bg-zinc-900 rounded-full overflow-hidden">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${percentage}%` }}
-                      className="h-full bg-emerald-500/50"
-                    />
-                  </div>
-                </div>
-              );
-            })}
+        {config.widgets.includes('trends') && (
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 lg:col-span-2">
+            <h3 className="text-xs font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2">
+              <Activity size={14} />
+              Tendencias de Amenazas
+            </h3>
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData}>
+                  <defs>
+                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" vertical={false} />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#4b5563" 
+                    fontSize={10} 
+                    tickLine={false} 
+                    axisLine={false}
+                    tickFormatter={(val) => new Date(val).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                  />
+                  <YAxis stroke="#4b5563" fontSize={10} tickLine={false} axisLine={false} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0d0d0d', border: '1px solid #374151', borderRadius: '8px', fontSize: '10px' }}
+                    itemStyle={{ color: '#10b981' }}
+                  />
+                  <Area type="monotone" dataKey={trendData[0] ? Object.keys(trendData[0]).filter(k => k !== 'date')[0] : 'count'} stroke="#10b981" fillOpacity={1} fill="url(#colorCount)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
-          <h3 className="text-xs font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2">
-            <Clock size={14} />
-            Alertas Recientes
-          </h3>
-          <div className="space-y-4">
-            {stats.alerts.slice(0, 4).map(alert => (
-              <div key={alert.id} className="flex items-center gap-4 p-3 rounded hover:bg-zinc-800/30 transition-colors border border-transparent hover:border-zinc-800">
-                <div className={`w-2 h-2 rounded-full ${alert.severity === 'critical' ? 'bg-red-500' : 'bg-yellow-500'}`} />
-                <div className="flex-1">
-                  <p className="text-xs font-medium">{alert.title}</p>
-                  <p className="text-[10px] text-zinc-500 font-mono">{alert.client_name} • {alert.category}</p>
-                </div>
-                <div className="text-[10px] text-zinc-600 font-mono">
-                  {new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </div>
-              </div>
-            ))}
+        {config.widgets.includes('severity_dist') && (
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
+            <h3 className="text-xs font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2">
+              <AlertTriangle size={14} />
+              Distribución por Severidad
+            </h3>
+            <div className="h-[200px] w-full flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'Crítica', value: criticalAlerts, color: '#ef4444' },
+                      { name: 'Alta', value: stats.alerts.filter(a => a.severity === 'high').length, color: '#f97316' },
+                      { name: 'Media', value: stats.alerts.filter(a => a.severity === 'medium').length, color: '#eab308' },
+                      { name: 'Baja', value: stats.alerts.filter(a => a.severity === 'low').length, color: '#3b82f6' },
+                    ]}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {[
+                      { name: 'Crítica', value: criticalAlerts, color: '#ef4444' },
+                      { name: 'Alta', value: stats.alerts.filter(a => a.severity === 'high').length, color: '#f97316' },
+                      { name: 'Media', value: stats.alerts.filter(a => a.severity === 'medium').length, color: '#eab308' },
+                      { name: 'Baja', value: stats.alerts.filter(a => a.severity === 'low').length, color: '#3b82f6' },
+                    ].map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0d0d0d', border: '1px solid #374151', borderRadius: '8px', fontSize: '10px' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </div>
+        )}
+
+        {config.widgets.includes('recent_alerts') && (
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
+            <h3 className="text-xs font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2">
+              <Clock size={14} />
+              Alertas Recientes
+            </h3>
+            <div className="space-y-4">
+              {stats.alerts.slice(0, 5).map(alert => (
+                <div key={alert.id} className="flex items-center gap-4 p-3 rounded hover:bg-zinc-800/30 transition-colors border border-transparent hover:border-zinc-800">
+                  <div className={cn(
+                    "w-2 h-2 rounded-full",
+                    alert.severity === 'critical' ? 'bg-red-500' : 
+                    alert.severity === 'high' ? 'bg-orange-500' : 'bg-yellow-500'
+                  )} />
+                  <div className="flex-1">
+                    <p className="text-xs font-medium">{alert.title}</p>
+                    <p className="text-[10px] text-zinc-500 font-mono uppercase">{alert.client_name} • {alert.category}</p>
+                  </div>
+                  <div className="text-[10px] text-zinc-600 font-mono">
+                    {new Date(alert.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -464,7 +885,8 @@ function StatCard({ label, value, icon }: { label: string, value: string | numbe
   );
 }
 
-function AlertList({ alerts, onAlertClick, getCategoryIcon, clients, onFilterClient, selectedCategory }: { alerts: Alert[], onAlertClick: (id: number) => void, getCategoryIcon: (cat: string) => React.ReactNode, clients: Client[], onFilterClient: (id: string) => void, selectedCategory: string | null }) {
+function AlertList({ alerts: rawAlerts, onAlertClick, getCategoryIcon, clients, onFilterClient, selectedCategory, user }: { alerts: Alert[], onAlertClick: (id: number) => void, getCategoryIcon: (cat: string) => React.ReactNode, clients: Client[], onFilterClient: (id: string) => void, selectedCategory: string | null, user: User | null }) {
+  const alerts = Array.isArray(rawAlerts) ? rawAlerts : [];
   const counts = {
     critical: alerts.filter(a => a.severity === 'critical').length,
     high: alerts.filter(a => a.severity === 'high').length,
@@ -490,16 +912,20 @@ function AlertList({ alerts, onAlertClick, getCategoryIcon, clients, onFilterCli
 
       <div className="flex justify-between items-center bg-[#0d0d0d] p-4 border border-zinc-800 rounded-xl">
         <div className="flex items-center gap-4">
-          <Filter size={16} className="text-zinc-500" />
-          <select 
-            onChange={(e) => onFilterClient(e.target.value)}
-            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
-          >
-            <option value="">Todos los Clientes</option>
-            {clients.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+          {user?.role !== 'client' && (
+            <>
+              <Filter size={16} className="text-zinc-500" />
+              <select 
+                onChange={(e) => onFilterClient(e.target.value)}
+                className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+              >
+                <option value="">Todos los Clientes</option>
+                {clients.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
         <div className="text-[10px] font-mono text-zinc-500 uppercase">
           Mostrando {alerts.length} alertas
@@ -508,7 +934,7 @@ function AlertList({ alerts, onAlertClick, getCategoryIcon, clients, onFilterCli
 
       <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl overflow-hidden">
         <div className="data-grid-row bg-zinc-900/50 font-mono text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800 cursor-default hover:bg-zinc-900/50">
-          <div>ID</div>
+          <div>ID Alerta</div>
           <div>Título</div>
           <div>Cliente</div>
           <div>Categoría</div>
@@ -521,25 +947,22 @@ function AlertList({ alerts, onAlertClick, getCategoryIcon, clients, onFilterCli
             className="data-grid-row"
             onClick={() => onAlertClick(alert.id)}
           >
-            <div className="data-value text-zinc-500">#{alert.id.toString().padStart(4, '0')}</div>
+            <div className="data-value text-zinc-500 text-[10px]">
+              {alert.client_name.split(' ')[0].toUpperCase()}-{alert.client_alert_id.toString().padStart(3, '0')}
+            </div>
             <div className="text-xs font-medium truncate pr-4">{alert.title}</div>
-            <div className="text-xs text-zinc-400">{alert.client_name}</div>
+            <div className="text-xs text-zinc-400 uppercase">{alert.client_name}</div>
             <div className="flex items-center gap-2 text-xs text-zinc-500">
               {getCategoryIcon(alert.category)}
               <span className="truncate">{alert.category}</span>
             </div>
             <div>
-              <span className={`status-pill border ${SEVERITY_COLORS[alert.severity]}`}>
-                {alert.severity.toUpperCase()}
+              <span className={`px-2 py-0.5 rounded-[4px] border text-[9px] font-mono uppercase tracking-tighter ${SEVERITY_COLORS[alert.severity]}`}>
+                {alert.severity}
               </span>
             </div>
             <div>
-              <span className={`status-pill border ${
-                alert.status === 'new' ? 'border-blue-500/20 text-blue-400' :
-                alert.status === 'in_progress' ? 'border-yellow-500/20 text-yellow-400' :
-                alert.status === 'resolved' ? 'border-emerald-500/20 text-emerald-400' :
-                'border-zinc-500/20 text-zinc-500'
-              }`}>
+              <span className={`px-2 py-0.5 rounded-[4px] border text-[9px] font-mono uppercase tracking-tighter ${STATUS_COLORS[alert.status]}`}>
                 {STATUS_LABELS[alert.status]}
               </span>
             </div>
@@ -633,6 +1056,18 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
     setUpdating(false);
   };
 
+  const handleSeverityChange = async (severity: string) => {
+    setUpdating(true);
+    await fetch(`/api/alerts/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ severity })
+    });
+    await fetchAlert();
+    onUpdate();
+    setUpdating(false);
+  };
+
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
@@ -648,6 +1083,8 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
 
   if (!alert) return <div className="text-zinc-500 font-mono">LOADING_ALERT_DATA...</div>;
 
+  const canManage = user?.role === 'super_admin' || user?.role === 'analyst';
+
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-12">
       <button onClick={onBack} className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
@@ -661,10 +1098,12 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
             <div className="flex items-start justify-between mb-6">
               <div className="space-y-1">
                 <div className="flex items-center gap-3 mb-2">
-                  <span className={`status-pill border ${SEVERITY_COLORS[alert.severity]}`}>
-                    {alert.severity.toUpperCase()}
+                  <span className={`px-2 py-0.5 rounded-[4px] border text-[9px] font-mono uppercase tracking-tighter ${SEVERITY_COLORS[alert.severity]}`}>
+                    {alert.severity}
                   </span>
-                  <span className="text-[10px] font-mono text-zinc-500">#{alert.id.toString().padStart(4, '0')}</span>
+                  <span className="text-[10px] font-mono text-zinc-500">
+                    {alert.client_name.split(' ')[0].toUpperCase()}-{alert.client_alert_id.toString().padStart(3, '0')}
+                  </span>
                 </div>
                 <h1 className="text-2xl font-bold tracking-tight">{alert.title}</h1>
               </div>
@@ -681,7 +1120,7 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
               </div>
               <div>
                 <h4 className="text-[10px] font-mono text-zinc-500 uppercase mb-2">Cliente</h4>
-                <p className="text-sm">{alert.client_name}</p>
+                <p className="text-sm uppercase">{alert.client_name}</p>
               </div>
               <div>
                 <h4 className="text-[10px] font-mono text-zinc-500 uppercase mb-2">Fecha Detección</h4>
@@ -743,38 +1182,67 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
 
         <div className="space-y-6">
           <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
-            <h3 className="text-xs font-mono text-zinc-500 uppercase mb-4">Gestión de Estado</h3>
-            <div className="space-y-2">
-              {Object.entries(STATUS_LABELS).map(([key, label]) => (
-                <button
-                  key={key}
-                  disabled={updating}
-                  onClick={() => handleStatusChange(key)}
-                  className={`w-full text-left px-4 py-2.5 rounded text-xs font-medium transition-all border ${
-                    alert.status === key 
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                      : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <h3 className="text-xs font-mono text-zinc-500 uppercase mb-4">Estado Actual</h3>
+            <div className={`px-4 py-3 rounded border text-center font-mono text-xs uppercase tracking-widest mb-6 ${STATUS_COLORS[alert.status]}`}>
+              {STATUS_LABELS[alert.status]}
             </div>
+
+            {canManage && (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-mono text-zinc-500 uppercase mb-2">Cambiar Estado</h4>
+                  {Object.entries(STATUS_LABELS).map(([key, label]) => (
+                    <button
+                      key={key}
+                      disabled={updating}
+                      onClick={() => handleStatusChange(key)}
+                      className={`w-full text-left px-4 py-2 rounded text-[10px] font-mono uppercase tracking-tighter transition-all border ${
+                        alert.status === key 
+                          ? STATUS_COLORS[key as keyof typeof STATUS_COLORS]
+                          : 'bg-zinc-900 text-zinc-500 border-zinc-800 hover:border-zinc-700'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-mono text-zinc-500 uppercase mb-2">Cambiar Severidad</h4>
+                  {Object.entries(SEVERITY_COLORS).map(([key, colorClass]) => (
+                    <button
+                      key={key}
+                      disabled={updating}
+                      onClick={() => handleSeverityChange(key)}
+                      className={`w-full text-left px-4 py-2 rounded text-[10px] font-mono uppercase tracking-tighter transition-all border ${
+                        alert.severity === key 
+                          ? colorClass
+                          : 'bg-zinc-900 text-zinc-500 border-zinc-800 hover:border-zinc-700'
+                      }`}
+                    >
+                      {key}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
-            <h3 className="text-xs font-mono text-zinc-500 uppercase mb-4">Acciones Rápidas</h3>
-            <div className="space-y-2">
-              <button className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-2.5 rounded text-xs font-medium transition-colors flex items-center gap-2">
-                <Mail size={14} />
-                Notificar al Cliente
-              </button>
-              <button className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-2.5 rounded text-xs font-medium transition-colors flex items-center gap-2">
-                <FileWarning size={14} />
-                Generar Reporte PDF
-              </button>
+          {canManage && (
+            <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
+              <h3 className="text-xs font-mono text-zinc-500 uppercase mb-4">Acciones Rápidas</h3>
+              <div className="space-y-2">
+                <button className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-2.5 rounded text-xs font-medium transition-colors flex items-center gap-2">
+                  <Mail size={14} />
+                  Notificar al Cliente
+                </button>
+                <button className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-2.5 rounded text-xs font-medium transition-colors flex items-center gap-2">
+                  <FileWarning size={14} />
+                  Generar Reporte PDF
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
