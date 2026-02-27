@@ -30,12 +30,21 @@ import {
   Terminal,
   Languages,
   Database,
-  Key
+  Key,
+  History,
+  List,
+  FileText,
+  Play,
+  RefreshCw,
+  ExternalLink,
+  Code,
+  Activity as ActivityIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
 import { User, Client, Alert, Comment, ClientModule } from './types';
 import { CATEGORIES, STATUS_LABELS, SEVERITY_COLORS, STATUS_COLORS } from './constants';
+import { translations, Language } from './translations';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -50,10 +59,17 @@ function cn(...inputs: ClassValue[]) {
 export default function App() {
   // --- ESTADOS GLOBALES ---
   const [user, setUser] = useState<any | null>(null); // Usuario autenticado
+  const [lang, setLang] = useState<Language>(() => {
+    const saved = localStorage.getItem('vigilancia_lang');
+    return (saved as Language) || 'es';
+  });
+  const t = (key: keyof typeof translations['es']) => translations[lang][key] || key;
+
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [view, setView] = useState<'dashboard' | 'alerts' | 'clients' | 'alert_detail' | 'client_config' | 'connectors' | 'users' | 'categorization_config' | 'system_config'>('dashboard'); // Vista actual
+  const [view, setView] = useState<'dashboard' | 'alerts' | 'clients' | 'alert_detail' | 'client_config' | 'connectors' | 'connector_detail' | 'users' | 'system_config' | 'profile' | 'documentation'>('dashboard'); // Vista actual
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null); // Cliente seleccionado para configuración
+  const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null); // Conector seleccionado para detalle
   const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null); // Alerta seleccionada para detalle
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null); // Filtro de categoría
   const [alerts, setAlerts] = useState<Alert[]>([]); // Listado de alertas
@@ -77,6 +93,10 @@ export default function App() {
   });
   const [searchResults, setSearchResults] = useState<Alert[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('vigilancia_lang', lang);
+  }, [lang]);
 
   /**
    * Inicialización de la aplicación
@@ -252,7 +272,7 @@ export default function App() {
   if (loading) return <div className="flex items-center justify-center h-screen text-zinc-500 font-mono">INITIALIZING_SYSTEM...</div>;
 
   if (!user) {
-    return <LoginView onLogin={handleLogin} error={loginError} loading={isLoggingIn} />;
+    return <LoginView onLogin={handleLogin} error={loginError} loading={isLoggingIn} t={t} />;
   }
 
   return (
@@ -277,7 +297,7 @@ export default function App() {
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           <SidebarItem 
             icon={<BarChart3 size={18} />} 
-            label="Dashboard" 
+            label={t('dashboard')} 
             active={view === 'dashboard'} 
             onClick={() => setView('dashboard')} 
           />
@@ -285,7 +305,7 @@ export default function App() {
           <div className="space-y-1">
             <SidebarItem 
               icon={<AlertTriangle size={18} />} 
-              label="Alertas" 
+              label={t('alerts')} 
               active={view === 'alerts' || view === 'alert_detail'} 
               onClick={() => {
                 setIsAlertsOpen(!isAlertsOpen);
@@ -311,7 +331,7 @@ export default function App() {
                     }}
                     className={`w-full text-left px-4 py-1.5 text-[11px] font-mono uppercase tracking-tighter rounded transition-colors ${!selectedCategory ? 'text-emerald-400 bg-emerald-500/5' : 'text-zinc-500 hover:text-zinc-300'}`}
                   >
-                    Todas las Alertas
+                    {t('all_alerts')}
                   </button>
                   {CATEGORIES.filter(cat => activeModules.includes(cat)).map(cat => (
                     <button 
@@ -334,45 +354,58 @@ export default function App() {
             <>
               <SidebarItem 
                 icon={<Cpu size={18} />} 
-                label="Conectores" 
+                label={t('connectors')} 
                 active={view === 'connectors'} 
                 onClick={() => setView('connectors')} 
               />
               <SidebarItem 
                 icon={<Users size={18} />} 
-                label="Clientes" 
+                label={t('clients')} 
                 active={view === 'clients'} 
                 onClick={() => setView('clients')} 
               />
               <SidebarItem 
                 icon={<Lock size={18} />} 
-                label="Usuarios" 
+                label={t('users')} 
                 active={view === 'users'} 
                 onClick={() => setView('users')} 
               />
               <SidebarItem 
                 icon={<Settings size={18} />} 
-                label="Configuración" 
+                label={t('config')} 
                 active={view === 'system_config'}
                 onClick={() => setView('system_config')}
               />
             </>
           )}
+
+          {(user?.role === 'super_admin' || user?.role === 'analyst') && (
+            <SidebarItem 
+              icon={<FileText size={18} />} 
+              label={t('documentation')} 
+              active={view === 'documentation'} 
+              onClick={() => setView('documentation')} 
+            />
+          )}
         </nav>
 
         <div className="p-4 border-t border-zinc-800">
           <div className="flex items-center gap-3 p-3 bg-zinc-900/50 rounded-lg border border-zinc-800">
-            <div className="w-8 h-8 rounded bg-zinc-800 flex items-center justify-center text-zinc-400">
+            <button 
+              onClick={() => setView('profile')}
+              className="w-8 h-8 rounded bg-zinc-800 flex items-center justify-center text-zinc-400 hover:text-emerald-400 transition-colors"
+              title={t('profile')}
+            >
               <Shield size={16} />
-            </div>
-            <div className="flex-1 min-w-0">
+            </button>
+            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setView('profile')}>
               <p className="text-xs font-bold truncate">{user.username}</p>
               <p className="text-[10px] text-zinc-500 uppercase font-mono">{user.role}</p>
             </div>
             <button 
               onClick={handleLogout}
               className="p-1.5 hover:bg-zinc-800 rounded text-zinc-500 hover:text-red-400 transition-colors"
-              title="Cerrar Sesión"
+              title={t('logout')}
             >
               <LogOut size={16} />
             </button>
@@ -385,12 +418,14 @@ export default function App() {
         <header className="h-16 border-b border-zinc-800 flex items-center justify-between px-8 bg-[#0a0a0a] z-50">
           <div className="flex items-center gap-4">
             <h2 className="text-sm font-mono text-zinc-400 uppercase tracking-widest">
-              {view === 'dashboard' && 'System Overview'}
-              {view === 'alerts' && 'Alert Management'}
-              {view === 'clients' && 'Client Directory'}
+              {view === 'dashboard' && t('system_overview')}
+              {view === 'alerts' && t('alert_management')}
+              {view === 'clients' && t('client_directory')}
               {view === 'alert_detail' && `Alert #${selectedAlertId}`}
-              {view === 'system_config' && 'System Configuration'}
-              {view === 'connectors' && 'Data Connectors'}
+              {view === 'system_config' && t('system_config')}
+              {view === 'connectors' && t('data_connectors')}
+              {view === 'profile' && t('user_profile')}
+              {view === 'documentation' && t('documentation')}
             </h2>
           </div>
           <div className="flex items-center gap-6">
@@ -398,7 +433,7 @@ export default function App() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={14} />
               <input 
                 type="text" 
-                placeholder="Búsqueda rápida..." 
+                placeholder={t('search_placeholder')} 
                 value={searchParams.q}
                 onChange={(e) => setSearchParams({ ...searchParams, q: e.target.value })}
                 onKeyDown={(e) => e.key === 'Enter' && handleAdvancedSearch()}
@@ -434,7 +469,7 @@ export default function App() {
                       className="absolute right-0 mt-2 w-80 bg-[#0d0d0d] border border-zinc-800 rounded-xl shadow-2xl z-50 overflow-hidden"
                     >
                       <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
-                        <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400">Notificaciones</h3>
+                        <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400">{t('notifications')}</h3>
                         <span className="text-[10px] font-mono text-zinc-600">{notifications.length} TOTAL</span>
                       </div>
                       <div className="max-h-[400px] overflow-y-auto">
@@ -468,7 +503,7 @@ export default function App() {
                           ))
                         ) : (
                           <div className="p-8 text-center text-zinc-600 text-xs font-mono">
-                            NO_NOTIFICATIONS_FOUND
+                            {t('no_notifications')}
                           </div>
                         )}
                       </div>
@@ -481,7 +516,7 @@ export default function App() {
             <div className="w-px h-4 bg-zinc-800" />
             <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500">
               <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-              LIVE_FEED
+              {t('live_feed')}
             </div>
           </div>
         </header>
@@ -506,7 +541,7 @@ export default function App() {
                 <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
                   <div className="flex items-center gap-3">
                     <Search className="text-emerald-500" size={20} />
-                    <h3 className="text-lg font-bold">Búsqueda Avanzada</h3>
+                    <h3 className="text-lg font-bold">{t('advanced_search')}</h3>
                   </div>
                   <button onClick={() => setShowSearchModal(false)} className="text-zinc-500 hover:text-zinc-100">
                     <X size={20} />
@@ -515,7 +550,7 @@ export default function App() {
                 <form onSubmit={handleAdvancedSearch} className="p-8 space-y-6">
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Palabras Clave</label>
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('keywords')}</label>
                       <input 
                         type="text" 
                         value={searchParams.q}
@@ -525,7 +560,7 @@ export default function App() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Cliente</label>
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('client')}</label>
                       <select 
                         value={searchParams.client_id}
                         onChange={(e) => setSearchParams({ ...searchParams, client_id: e.target.value })}
@@ -536,7 +571,7 @@ export default function App() {
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Categoría</label>
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('category')}</label>
                       <select 
                         value={searchParams.category}
                         onChange={(e) => setSearchParams({ ...searchParams, category: e.target.value })}
@@ -547,7 +582,7 @@ export default function App() {
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Estado</label>
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('status')}</label>
                       <select 
                         value={searchParams.status}
                         onChange={(e) => setSearchParams({ ...searchParams, status: e.target.value })}
@@ -558,7 +593,7 @@ export default function App() {
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Desde</label>
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('from')}</label>
                       <input 
                         type="date" 
                         value={searchParams.date_from}
@@ -567,7 +602,7 @@ export default function App() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Hasta</label>
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('to')}</label>
                       <input 
                         type="date" 
                         value={searchParams.date_to}
@@ -582,14 +617,14 @@ export default function App() {
                       onClick={() => setSearchParams({ q: '', client_id: '', category: '', status: '', severity: '', date_from: '', date_to: '' })}
                       className="px-6 py-2.5 rounded-lg text-sm font-bold text-zinc-500 hover:text-zinc-100 transition-colors"
                     >
-                      Limpiar
+                      {t('clear')}
                     </button>
                     <button 
                       type="submit"
                       className="bg-emerald-500 hover:bg-emerald-600 text-black px-8 py-2.5 rounded-lg text-sm font-bold transition-all flex items-center gap-2"
                     >
                       <Search size={18} />
-                      Buscar Alertas
+                      {t('search_alerts')}
                     </button>
                   </div>
                 </form>
@@ -611,6 +646,7 @@ export default function App() {
                   stats={{ alerts }} 
                   config={dashboardConfig} 
                   user={user}
+                  t={t}
                   onUpdateConfig={async (newConfig) => {
                     setDashboardConfig(newConfig);
                     await fetch('/api/dashboard/config', {
@@ -619,6 +655,23 @@ export default function App() {
                       body: JSON.stringify({ config: newConfig })
                     });
                   }}
+                />
+              </motion.div>
+            )}
+
+            {view === 'profile' && (
+              <motion.div
+                key="profile"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <UserProfileView 
+                  user={user} 
+                  t={t} 
+                  lang={lang} 
+                  setLang={setLang} 
+                  onBack={() => setView('dashboard')} 
                 />
               </motion.div>
             )}
@@ -642,6 +695,7 @@ export default function App() {
                   }}
                   selectedCategory={selectedCategory}
                   user={user}
+                  t={t}
                 />
               </motion.div>
             )}
@@ -669,20 +723,28 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <ConnectorsView onSelect={(id) => {
-                  if (id === 'categorization') setView('categorization_config');
-                }} />
+                <ConnectorsView 
+                  t={t}
+                  onSelect={(id) => {
+                    setSelectedConnectorId(id);
+                    setView('connector_detail');
+                  }} 
+                />
               </motion.div>
             )}
 
-            {view === 'categorization_config' && (
+            {view === 'connector_detail' && selectedConnectorId && (
               <motion.div
-                key="categorization_config"
+                key="connector_detail"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <CategorizationConnectorConfig onBack={() => setView('connectors')} />
+                <ConnectorDetailView 
+                  connectorId={selectedConnectorId}
+                  t={t}
+                  onBack={() => setView('connectors')} 
+                />
               </motion.div>
             )}
 
@@ -735,8 +797,20 @@ export default function App() {
               >
                 <ClientConfigView 
                   clientId={selectedClientId} 
+                  user={user}
                   onBack={() => setView('clients')} 
                 />
+              </motion.div>
+            )}
+
+            {view === 'documentation' && (
+              <motion.div
+                key="documentation"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <DocumentationView t={t} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -763,7 +837,7 @@ function SidebarItem({ icon, label, active = false, onClick, trailing }: { icon:
   );
 }
 
-function Dashboard({ stats, config, onUpdateConfig, user }: { stats: { alerts: Alert[] }, config: { widgets: string[] }, onUpdateConfig: (newConfig: any) => void, user: User | null }) {
+function Dashboard({ stats, config, onUpdateConfig, user, t }: { stats: { alerts: Alert[] }, config: { widgets: string[] }, onUpdateConfig: (newConfig: any) => void, user: User | null, t: any }) {
   const [showConfig, setShowConfig] = useState(false);
   const alerts = Array.isArray(stats.alerts) ? stats.alerts : [];
   const totalAlerts = alerts.length;
@@ -799,25 +873,25 @@ function Dashboard({ stats, config, onUpdateConfig, user }: { stats: { alerts: A
   };
 
   const widgetOptions = [
-    { id: 'summary', label: 'Resumen de Estados', icon: <Layout size={14} /> },
-    { id: 'trends', label: 'Tendencias de Categorías', icon: <Activity size={14} /> },
-    { id: 'recent_alerts', label: 'Alertas Recientes', icon: <Clock size={14} /> },
-    { id: 'severity_dist', label: 'Distribución de Severidad', icon: <AlertTriangle size={14} /> }
+    { id: 'summary', label: t('summary_states'), icon: <Layout size={14} /> },
+    { id: 'trends', label: t('category_trends'), icon: <Activity size={14} /> },
+    { id: 'recent_alerts', label: t('recent_alerts'), icon: <Clock size={14} /> },
+    { id: 'severity_dist', label: t('severity_dist'), icon: <AlertTriangle size={14} /> }
   ];
 
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Panel de Control</h1>
-          <p className="text-sm text-zinc-500">Resumen ejecutivo y métricas de seguridad.</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t('control_panel')}</h1>
+          <p className="text-sm text-zinc-500">{t('dashboard_summary')}</p>
         </div>
         <button 
           onClick={() => setShowConfig(!showConfig)}
           className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-bold hover:bg-zinc-800 transition-colors"
         >
           <Settings size={14} />
-          Personalizar Panel
+          {t('customize_panel')}
         </button>
       </div>
 
@@ -830,7 +904,7 @@ function Dashboard({ stats, config, onUpdateConfig, user }: { stats: { alerts: A
             className="overflow-hidden"
           >
             <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 mb-8">
-              <h3 className="text-xs font-mono text-zinc-500 uppercase mb-4">Seleccionar Widgets</h3>
+              <h3 className="text-xs font-mono text-zinc-500 uppercase mb-4">{t('select_widgets')}</h3>
               <div className="flex flex-wrap gap-4">
                 {widgetOptions.map(opt => (
                   <button
@@ -855,10 +929,10 @@ function Dashboard({ stats, config, onUpdateConfig, user }: { stats: { alerts: A
       </AnimatePresence>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <StatCard label="Total Alertas" value={totalAlerts} icon={<AlertTriangle className="text-zinc-400" />} />
-        <StatCard label="Críticas" value={criticalAlerts} icon={<Activity className="text-red-400" />} />
-        <StatCard label="En Progreso" value={inProgressAlerts} icon={<Clock className="text-yellow-400" />} />
-        <StatCard label="Resueltas" value={resolvedAlerts} icon={<Shield className="text-emerald-400" />} />
+        <StatCard label={t('total_alerts')} value={totalAlerts} icon={<AlertTriangle className="text-zinc-400" />} />
+        <StatCard label={t('critical')} value={criticalAlerts} icon={<Activity className="text-red-400" />} />
+        <StatCard label={t('in_progress')} value={inProgressAlerts} icon={<Clock className="text-yellow-400" />} />
+        <StatCard label={t('resolved')} value={resolvedAlerts} icon={<Shield className="text-emerald-400" />} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -982,7 +1056,7 @@ function StatCard({ label, value, icon }: { label: string, value: string | numbe
   );
 }
 
-function AlertList({ alerts: rawAlerts, onAlertClick, getCategoryIcon, clients, onFilterClient, selectedCategory, user }: { alerts: Alert[], onAlertClick: (id: number) => void, getCategoryIcon: (cat: string) => React.ReactNode, clients: Client[], onFilterClient: (id: string) => void, selectedCategory: string | null, user: User | null }) {
+function AlertList({ alerts: rawAlerts, onAlertClick, getCategoryIcon, clients, onFilterClient, selectedCategory, user, t }: { alerts: Alert[], onAlertClick: (id: number) => void, getCategoryIcon: (cat: string) => React.ReactNode, clients: Client[], onFilterClient: (id: string) => void, selectedCategory: string | null, user: User | null, t: any }) {
   const alerts = Array.isArray(rawAlerts) ? rawAlerts : [];
   const counts = {
     critical: alerts.filter(a => a.severity === 'critical').length,
@@ -1079,345 +1153,887 @@ function SeverityCount({ label, count, color, bg }: { label: string, count: numb
   );
 }
 
-function ConnectorsView({ onSelect }: { onSelect: (id: string) => void }) {
-  const connectors = [
-    { id: 'categorization', name: 'Categorization Connector', status: 'online', type: 'Categorización', lastSync: '1m ago' },
-    { id: 'docker', name: 'Docker Scanner V1', status: 'online', type: 'Vulnerabilidades', lastSync: '2m ago' },
-    { id: 'domain', name: 'Domain Monitor X', status: 'online', type: 'Dominios', lastSync: '5m ago' },
-    { id: 'pastebin', name: 'Pastebin Scraper', status: 'offline', type: 'Fugas', lastSync: '1h ago' },
-    { id: 'social', name: 'Social Media Watcher', status: 'online', type: 'RRSS', lastSync: '10m ago' },
-  ];
-
-  return (
-    <div className="max-w-5xl mx-auto space-y-8">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Conectores de Datos</h1>
-          <p className="text-sm text-zinc-500">Gestiona los contenedores y servicios que alimentan el sistema de alertas.</p>
-        </div>
-        <button className="bg-emerald-500 hover:bg-emerald-600 text-black px-4 py-2 rounded text-sm font-bold transition-colors flex items-center gap-2">
-          <Plus size={16} />
-          Nuevo Conector
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {connectors.map(conn => (
-          <div 
-            key={conn.id} 
-            onClick={() => onSelect(conn.id)}
-            className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 flex items-center gap-6 cursor-pointer hover:border-emerald-500/50 transition-all group"
-          >
-            <div className={`w-12 h-12 rounded-lg flex items-center justify-center transition-colors ${conn.status === 'online' ? 'bg-emerald-500/10 text-emerald-500 group-hover:bg-emerald-500/20' : 'bg-red-500/10 text-red-500 group-hover:bg-red-500/20'}`}>
-              <Cpu size={24} />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold group-hover:text-emerald-400 transition-colors">{conn.name}</h3>
-                <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border ${conn.status === 'online' ? 'border-emerald-500/20 text-emerald-500' : 'border-red-500/20 text-red-500'}`}>
-                  {conn.status}
-                </span>
-              </div>
-              <p className="text-xs text-zinc-500">{conn.type}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] font-mono text-zinc-600 uppercase">Last Sync</p>
-              <p className="text-xs text-zinc-400">{conn.lastSync}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /**
- * Componente de Configuración del Conector de Categorización
- * Permite gestionar los proveedores de inteligencia (URLHaus, AbuseIPDB, etc.)
+ * Vista de Gestión de Conectores (Globales)
  */
-function CategorizationConnectorConfig({ onBack }: { onBack: () => void }) {
-  const [providers, setProviders] = useState<any[]>([]);
+function ConnectorsView({ onSelect, t }: { onSelect: (id: string) => void, t: any }) {
+  const [connectors, setConnectors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [reloading, setReloading] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<any | null>(null);
+  const [showNewModal, setShowNewModal] = useState(false);
 
   useEffect(() => {
-    fetchProviders();
+    fetchConnectors();
   }, []);
 
-  /**
-   * Obtiene el listado de proveedores configurados desde la API
-   */
-  const fetchProviders = async () => {
+  const fetchConnectors = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/connectors/categorization/providers');
+      const res = await fetch('/v1/connectors');
       const data = await res.json();
-      setProviders(data);
+      setConnectors(data);
     } catch (e) {
       console.error(e);
     }
     setLoading(false);
   };
 
-  /**
-   * Activa o desactiva un proveedor específico
-   */
-  const handleToggleProvider = async (key: string, enabled: boolean) => {
-    await fetch(`/api/connectors/categorization/providers/${key}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled })
-    });
-    fetchProviders();
-  };
-
-  /**
-   * Solicita al microservicio que recargue su configuración en caliente
-   */
-  const handleReload = async () => {
-    setReloading(true);
-    await fetch('/api/connectors/categorization/reload', { method: 'POST' });
-    setTimeout(() => {
-      setReloading(false);
-      fetchProviders();
-    }, 1000);
-  };
-
-  /**
-   * Guarda los cambios realizados en la configuración de un proveedor
-   */
-  const saveProvider = async (key: string, data: any) => {
-    await fetch(`/api/connectors/categorization/providers/${key}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    setSelectedProvider(null);
-    fetchProviders();
-  };
-
-  if (loading) return <div className="p-8 text-zinc-500 font-mono">LOADING_CONNECTOR_CONFIG...</div>;
+  if (loading) return <div className="p-8 text-zinc-500 font-mono">LOADING_CONNECTORS...</div>;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-12">
+    <div className="max-w-6xl mx-auto space-y-8">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{t('connector_management')}</h1>
+          <p className="text-sm text-zinc-500">{t('connector_desc')}</p>
+        </div>
+        <button 
+          onClick={() => setShowNewModal(true)}
+          className="bg-emerald-500 hover:bg-emerald-600 text-black px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2"
+        >
+          <Plus size={16} />
+          {t('new_connector')}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {connectors.map(conn => (
+          <div 
+            key={conn.connector_id} 
+            onClick={() => onSelect(conn.connector_id)}
+            className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 flex flex-col gap-4 cursor-pointer hover:border-emerald-500/50 transition-all group relative overflow-hidden"
+          >
+            <div className="flex items-center gap-4">
+              <div className={cn(
+                "w-12 h-12 rounded-lg flex items-center justify-center transition-colors",
+                conn.status === 'online' ? 'bg-emerald-500/10 text-emerald-500' : 
+                conn.status === 'degraded' ? 'bg-yellow-500/10 text-yellow-500' : 
+                'bg-red-500/10 text-red-500'
+              )}>
+                <Cpu size={24} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold truncate group-hover:text-emerald-400 transition-colors">{conn.name}</h3>
+                </div>
+                <p className="text-[10px] text-zinc-500 uppercase font-mono">{conn.type} | {conn.vendor}</p>
+              </div>
+              <div className={cn(
+                "text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border",
+                conn.status === 'online' ? 'border-emerald-500/20 text-emerald-500' : 
+                conn.status === 'degraded' ? 'border-yellow-500/20 text-yellow-500' : 
+                'border-red-500/20 text-red-500'
+              )}>
+                {conn.status}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-zinc-800/50">
+              <div>
+                <p className="text-[9px] font-mono text-zinc-600 uppercase">{t('last_sync')}</p>
+                <p className="text-[11px] text-zinc-400 truncate">{conn.last_success_at ? new Date(conn.last_success_at).toLocaleString() : 'Never'}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[9px] font-mono text-zinc-600 uppercase">{t('mode_ingest')}</p>
+                <p className="text-[11px] text-zinc-400 uppercase">{conn.mode_ingest.replace('_', ' ')}</p>
+              </div>
+            </div>
+
+            {/* Progress bar simulation for active connectors */}
+            {conn.status === 'online' && (
+              <div className="absolute bottom-0 left-0 h-0.5 bg-emerald-500/30 w-full overflow-hidden">
+                <motion.div 
+                  initial={{ x: '-100%' }}
+                  animate={{ x: '100%' }}
+                  transition={{ repeat: Infinity, duration: 3, ease: 'linear' }}
+                  className="h-full w-1/3 bg-emerald-500"
+                />
+              </div>
+            )}
+          </div>
+        ))}
+
+        {connectors.length === 0 && (
+          <div className="col-span-full py-20 text-center border-2 border-dashed border-zinc-800 rounded-2xl">
+            <Cpu size={48} className="mx-auto text-zinc-700 mb-4" />
+            <p className="text-zinc-500">No hay conectores configurados.</p>
+          </div>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {showNewModal && (
+          <NewConnectorModal 
+            t={t} 
+            onClose={() => setShowNewModal(false)} 
+            onSuccess={() => {
+              setShowNewModal(false);
+              fetchConnectors();
+            }} 
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function NewConnectorModal({ t, onClose, onSuccess }: { t: any, onClose: () => void, onSuccess: () => void }) {
+  const [formData, setFormData] = useState({
+    name: '',
+    type: 'generic',
+    vendor: '',
+    version: '1.0.0',
+    description: '',
+    mode_ingest: 'push_webhook',
+    mode_export: 'none',
+    auth_method: 'api_key',
+    config_schema: {
+      type: "object",
+      properties: {
+        api_key: { type: "string" }
+      }
+    },
+    config: {},
+    secrets_ref: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/v1/connectors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        onSuccess();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Error creating connector');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setIsSubmitting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+        className="relative w-full max-w-2xl bg-[#0d0d0d] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+      >
+        <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/20">
+          <div className="flex items-center gap-3">
+            <Cpu className="text-emerald-500" size={20} />
+            <h3 className="text-lg font-bold">{t('new_connector')}</h3>
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-100">
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto">
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('name')}</label>
+              <input 
+                required
+                type="text" 
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+                placeholder="ej: Microsoft Sentinel Ingest"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('type')}</label>
+              <input 
+                required
+                type="text" 
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+                placeholder="ej: SIEM, EDR, Scanner"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('vendor')}</label>
+              <input 
+                required
+                type="text" 
+                value={formData.vendor}
+                onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+                placeholder="ej: Microsoft, Crowdstrike"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('version')}</label>
+              <input 
+                required
+                type="text" 
+                value={formData.version}
+                onChange={(e) => setFormData({ ...formData, version: e.target.value })}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+              />
+            </div>
+            <div className="col-span-2 space-y-2">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('description')}</label>
+              <textarea 
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50 h-20"
+                placeholder="Breve descripción del propósito del conector..."
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('mode_ingest')}</label>
+              <select 
+                value={formData.mode_ingest}
+                onChange={(e) => setFormData({ ...formData, mode_ingest: e.target.value })}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+              >
+                <option value="push_webhook">Push (Webhook)</option>
+                <option value="pull_polling">Pull (Polling)</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('auth_method')}</label>
+              <select 
+                value={formData.auth_method}
+                onChange={(e) => setFormData({ ...formData, auth_method: e.target.value })}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+              >
+                <option value="api_key">API Key</option>
+                <option value="hmac">HMAC</option>
+                <option value="oauth2">OAuth2</option>
+                <option value="mtls">mTLS</option>
+              </select>
+            </div>
+            <div className="col-span-2 space-y-2">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('secrets_ref')}</label>
+              <input 
+                type="text" 
+                value={formData.secrets_ref}
+                onChange={(e) => setFormData({ ...formData, secrets_ref: e.target.value })}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500/50"
+                placeholder="ej: vault/sentinel_secret"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-4 pt-6 border-t border-zinc-800">
+            <button 
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2.5 rounded-lg text-sm font-bold text-zinc-400 hover:text-zinc-100 transition-colors"
+            >
+              {t('cancel')}
+            </button>
+            <button 
+              type="submit"
+              disabled={isSubmitting}
+              className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-black px-8 py-2.5 rounded-lg text-sm font-bold transition-all shadow-lg shadow-emerald-500/20"
+            >
+              {isSubmitting ? 'CREATING...' : t('create_connector')}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
+/**
+ * Vista de Documentación
+ */
+function DocumentationView({ t }: { t: any }) {
+  const [activeSection, setActiveSection] = useState('overview');
+
+  const sections = [
+    { id: 'overview', label: 'Visión General', icon: <Globe size={16} /> },
+    { id: 'alerts', label: 'Gestión de Alertas', icon: <AlertTriangle size={16} /> },
+    { id: 'connectors', label: 'Conectores & API', icon: <Cpu size={16} /> },
+    { id: 'auth', label: 'Autenticación', icon: <Lock size={16} /> },
+    { id: 'clients', label: 'Multi-tenancy', icon: <Users size={16} /> },
+    { id: 'queue', label: 'Cola de Mensajes', icon: <RefreshCw size={16} /> },
+    { id: 'secrets', label: 'Gestión de Secretos', icon: <Shield size={16} /> },
+    { id: 'api_reference', label: 'Referencia API', icon: <Code size={16} /> }
+  ];
+
+  return (
+    <div className="max-w-6xl mx-auto flex gap-8 pb-20">
+      {/* Doc Sidebar */}
+      <div className="w-64 shrink-0 space-y-1">
+        <h3 className="px-4 py-2 text-[10px] font-mono text-zinc-600 uppercase tracking-widest">Secciones</h3>
+        {sections.map(s => (
+          <button
+            key={s.id}
+            onClick={() => setActiveSection(s.id)}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-2 rounded-lg text-sm transition-all",
+              activeSection === s.id ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
+            )}
+          >
+            {s.icon}
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Doc Content */}
+      <div className="flex-1 bg-[#0d0d0d] border border-zinc-800 rounded-2xl p-10 min-h-[70vh] prose prose-invert prose-emerald max-w-none overflow-y-auto">
+        {activeSection === 'overview' && (
+          <div className="space-y-6">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Visión General de la Plataforma</h1>
+            <p className="text-zinc-400 leading-relaxed">
+              Vigilancia CTI es una plataforma de inteligencia de amenazas diseñada para centralizar la ingestión, normalización y gestión de alertas de seguridad. 
+              La arquitectura se divide en dos planos principales:
+            </p>
+            <div className="grid grid-cols-2 gap-6 not-prose">
+              <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                <h4 className="text-emerald-400 font-bold mb-2">Control Plane</h4>
+                <p className="text-xs text-zinc-500">Gestión centralizada de conectores, configuración de clientes, usuarios y observabilidad del sistema.</p>
+              </div>
+              <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-xl">
+                <h4 className="text-blue-400 font-bold mb-2">Data Plane</h4>
+                <p className="text-xs text-zinc-500">Ingestión de alertas normalizadas a escala, exportación de datos y procesamiento de eventos en tiempo real.</p>
+              </div>
+            </div>
+            <h2 className="text-xl font-bold text-white">Objetivos Clave</h2>
+            <ul className="text-zinc-400 text-sm">
+              <li>Centralización de fuentes de inteligencia dispares.</li>
+              <li>Normalización de eventos bajo un esquema común (AlertEnvelope).</li>
+              <li>Visibilidad multi-cliente con aislamiento estricto de datos.</li>
+              <li>Automatización de la respuesta mediante exportación de deltas.</li>
+            </ul>
+          </div>
+        )}
+
+        {activeSection === 'alerts' && (
+          <div className="space-y-6">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Gestión de Alertas</h1>
+            <p className="text-zinc-400">
+              El módulo de alertas es el núcleo operativo de la plataforma. Permite visualizar, categorizar y gestionar el ciclo de vida de cada incidente.
+            </p>
+            <h3 className="text-lg font-bold text-emerald-400">Ciclo de Vida</h3>
+            <div className="flex items-center gap-4 not-prose">
+              {['New', 'In Progress', 'Resolved', 'Closed'].map((step, i) => (
+                <React.Fragment key={step}>
+                  <div className="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-mono uppercase">{step}</div>
+                  {i < 3 && <ChevronRight size={12} className="text-zinc-700" />}
+                </React.Fragment>
+              ))}
+            </div>
+            <h3 className="text-lg font-bold text-emerald-400">API de Consulta</h3>
+            <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs">
+{`GET /api/alerts?client_id=1&status=new&severity=high
+
+Response:
+[
+  {
+    "id": 123,
+    "title": "Detección de Phishing",
+    "severity": "high",
+    "status": "new",
+    "category": "Brand Protection",
+    ...
+  }
+]`}
+            </pre>
+          </div>
+        )}
+
+        {activeSection === 'connectors' && (
+          <div className="space-y-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Conectores & API de Ingestión</h1>
+            
+            <section>
+              <h2 className="text-xl font-bold text-emerald-400">Ingestión de Alertas (Push)</h2>
+              <p className="text-zinc-400">
+                El método recomendado para enviar alertas es mediante el endpoint de ingestión generado para cada conector.
+              </p>
+              <div className="bg-zinc-950 rounded-lg p-4 font-mono text-xs border border-zinc-800 not-prose">
+                <p className="text-emerald-500 font-bold mb-2">POST /v1/ingest/{"{connector_id}"}/alerts</p>
+                <p className="text-zinc-500 mb-4">Headers:</p>
+                <ul className="list-none p-0 space-y-1 text-zinc-400">
+                  <li><span className="text-zinc-600">Authorization:</span> HMAC {"{signature}"}</li>
+                  <li><span className="text-zinc-600">X-Timestamp:</span> {"{unix_timestamp}"}</li>
+                  <li><span className="text-zinc-600">X-Nonce:</span> {"{random_string}"}</li>
+                  <li><span className="text-zinc-600">X-Trace-Id:</span> {"{uuid}"} (Opcional)</li>
+                </ul>
+              </div>
+            </section>
+
+            <section>
+              <h2 className="text-xl font-bold text-emerald-400">Ejemplo de Payload (AlertEnvelope)</h2>
+              <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs">
+{`[
+  {
+    "event_id": "550e8400-e29b-41d4-a716-446655440000",
+    "event_time": "2024-03-20T10:00:00Z",
+    "client_id": 1,
+    "category": "Malware",
+    "severity": "high",
+    "title": "Detección de Ransomware en Endpoint",
+    "description": "Se ha detectado actividad sospechosa...",
+    "observables": [
+      { "type": "ip", "value": "1.2.3.4" },
+      { "type": "hash", "value": "a94a8fe5ccb19ba61c4c..." }
+    ],
+    "raw": {
+      "original_log": "..."
+    }
+  }
+]`}
+              </pre>
+            </section>
+          </div>
+        )}
+
+        {activeSection === 'auth' && (
+          <div className="space-y-6">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Guía de Autenticación</h1>
+            <p className="text-zinc-400">
+              La plataforma soporta múltiples métodos de autenticación para los conectores, siendo HMAC el estándar para entornos de alta seguridad.
+            </p>
+            <h3 className="text-lg font-bold text-emerald-400">Validación HMAC</h3>
+            <p className="text-zinc-400 text-sm">
+              La firma se calcula concatenando el timestamp, el nonce y el cuerpo de la petición, cifrando el resultado con la clave secreta del conector usando SHA256.
+            </p>
+            <div className="bg-zinc-900 p-4 rounded-lg border border-zinc-800 italic text-zinc-500 text-xs">
+              Nota: El sistema tolera una desviación de ±5 minutos en el timestamp para prevenir ataques de repetición.
+            </div>
+            <h3 className="text-lg font-bold text-emerald-400">Ejemplo de Firma (Node.js)</h3>
+            <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs">
+{`const crypto = require('crypto');
+const secret = 'your_connector_secret';
+const payload = JSON.stringify(data);
+const timestamp = Math.floor(Date.now() / 1000);
+const nonce = crypto.randomBytes(16).toString('hex');
+
+const signature = crypto.createHmac('sha256', secret)
+  .update(\`\${timestamp}\${nonce}\${payload}\`)
+  .digest('hex');`}
+            </pre>
+          </div>
+        )}
+
+        {activeSection === 'clients' && (
+          <div className="space-y-6">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Arquitectura Multi-tenant</h1>
+            <p className="text-zinc-400">
+              A diferencia de otras plataformas, los conectores en Vigilancia CTI son globales. La separación de datos se realiza a nivel de evento mediante el campo <code className="text-emerald-400">client_id</code>.
+            </p>
+            <ul className="text-zinc-400 text-sm space-y-2">
+              <li><strong>Aislamiento Lógico:</strong> Las consultas siempre filtran por el ID del cliente asociado al usuario.</li>
+              <li><strong>Configuración Específica:</strong> Cada cliente puede tener sus propios activos técnicos (dominios, IPs, marcas) para el enriquecimiento de alertas.</li>
+            </ul>
+            <h3 className="text-lg font-bold text-emerald-400">Gestión de Activos</h3>
+            <p className="text-zinc-400 text-sm">
+              Los activos técnicos permiten al sistema correlacionar alertas genéricas con el contexto específico del cliente.
+            </p>
+          </div>
+        )}
+
+        {activeSection === 'queue' && (
+          <div className="space-y-6">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Cola de Mensajes & Escalabilidad</h1>
+            <p className="text-zinc-400">
+              Para manejar volúmenes masivos de alertas (miles por segundo), la plataforma utiliza una arquitectura basada en colas.
+            </p>
+            <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-xl not-prose">
+              <h4 className="text-emerald-400 font-bold mb-4">Flujo de Ingestión Asíncrona</h4>
+              <div className="flex items-center gap-4 text-[10px] font-mono uppercase">
+                <div className="p-2 border border-zinc-700 rounded">API Endpoint</div>
+                <ChevronRight size={14} className="text-zinc-700" />
+                <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded">Message Queue</div>
+                <ChevronRight size={14} className="text-zinc-700" />
+                <div className="p-2 border border-zinc-700 rounded">Background Worker</div>
+                <ChevronRight size={14} className="text-zinc-700" />
+                <div className="p-2 border border-zinc-700 rounded">Database</div>
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-emerald-400">Beneficios</h3>
+            <ul className="text-zinc-400 text-sm">
+              <li><strong>Baja Latencia:</strong> El endpoint responde <code className="text-blue-400">202 Accepted</code> en milisegundos.</li>
+              <li><strong>Resiliencia:</strong> Si la base de datos está ocupada, los mensajes permanecen en la cola.</li>
+              <li><strong>Reintentos:</strong> Los fallos temporales se reintentan automáticamente.</li>
+            </ul>
+          </div>
+        )}
+
+        {activeSection === 'secrets' && (
+          <div className="space-y-6">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Gestión Segura de Secretos</h1>
+            <p className="text-zinc-400">
+              Vigilancia CTI nunca almacena claves privadas o secretos en texto plano dentro de la base de datos principal.
+            </p>
+            <h3 className="text-lg font-bold text-emerald-400">Integración con Secrets Manager</h3>
+            <p className="text-zinc-400 text-sm">
+              El campo <code className="text-emerald-400">secrets_ref</code> actúa como un puntero hacia un gestor de secretos externo (HashiCorp Vault, AWS Secrets Manager o Azure Key Vault).
+            </p>
+            <div className="bg-zinc-950 p-6 rounded-xl border border-zinc-800">
+              <h4 className="text-white text-sm font-bold mb-4">Ejemplo de Configuración</h4>
+              <div className="space-y-2">
+                <p className="text-xs text-zinc-500 font-mono">connector_id: "sentinel-01"</p>
+                <p className="text-xs text-zinc-500 font-mono">auth_method: "hmac"</p>
+                <p className="text-xs text-emerald-400 font-mono">secrets_ref: "vault/prod/sentinel-hmac-key"</p>
+              </div>
+            </div>
+            <p className="text-zinc-500 text-xs italic">
+              Durante el tiempo de ejecución, el sistema resuelve la referencia y utiliza el secreto en memoria para validar las firmas entrantes.
+            </p>
+          </div>
+        )}
+
+        {activeSection === 'api_reference' && (
+          <div className="space-y-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Referencia Completa de la API</h1>
+            
+            <div className="space-y-4 not-prose">
+              <ApiEndpoint method="GET" path="/v1/connectors" desc="Lista todos los conectores globales." />
+              <ApiEndpoint method="POST" path="/v1/connectors" desc="Crea un nuevo conector global." />
+              <ApiEndpoint method="GET" path="/v1/connectors/:id" desc="Obtiene el detalle de un conector." />
+              <ApiEndpoint method="PATCH" path="/v1/connectors/:id" desc="Actualiza la configuración de un conector." />
+              <ApiEndpoint method="POST" path="/v1/connectors/:id/test" desc="Lanza una prueba de conexión manual." />
+              <ApiEndpoint method="POST" path="/v1/ingest/:id/alerts" desc="Ingesta de alertas normalizadas (Asíncrona)." />
+              <ApiEndpoint method="GET" path="/v1/export/:id/delta" desc="Exporta deltas de alertas para integración externa." />
+              <ApiEndpoint method="GET" path="/api/me" desc="Obtiene información del usuario actual." />
+            </div>
+
+            <h3 className="text-lg font-bold text-white mt-8">Códigos de Estado</h3>
+            <table className="w-full text-xs text-zinc-400 border-collapse">
+              <thead>
+                <tr className="border-b border-zinc-800">
+                  <th className="text-left py-2">Código</th>
+                  <th className="text-left py-2">Descripción</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-900">
+                <tr><td className="py-2 font-mono text-emerald-500">200 OK</td><td className="py-2">Petición exitosa.</td></tr>
+                <tr><td className="py-2 font-mono text-blue-500">201 Created</td><td className="py-2">Recurso creado con éxito.</td></tr>
+                <tr><td className="py-2 font-mono text-yellow-500">202 Accepted</td><td className="py-2">Petición aceptada para procesamiento asíncrono.</td></tr>
+                <tr><td className="py-2 font-mono text-red-500">401 Unauthorized</td><td className="py-2">Error de autenticación o firma HMAC inválida.</td></tr>
+                <tr><td className="py-2 font-mono text-red-500">403 Forbidden</td><td className="py-2">Permisos insuficientes para el recurso.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ApiEndpoint({ method, path, desc }: { method: string, path: string, desc: string }) {
+  return (
+    <div className="p-4 bg-zinc-900/30 border border-zinc-800 rounded-lg flex items-center gap-4">
+      <span className={cn(
+        "px-2 py-1 rounded text-[10px] font-bold font-mono w-16 text-center",
+        method === 'GET' ? 'bg-blue-500/10 text-blue-400' : 
+        method === 'POST' ? 'bg-emerald-500/10 text-emerald-400' : 
+        'bg-yellow-500/10 text-yellow-400'
+      )}>{method}</span>
+      <div className="flex-1">
+        <p className="text-xs font-mono text-zinc-300">{path}</p>
+        <p className="text-[10px] text-zinc-500 mt-0.5">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Vista Detallada de un Conector
+ */
+function ConnectorDetailView({ connectorId, onBack, t }: { connectorId: string, onBack: () => void, t: any }) {
+  const [connector, setConnector] = useState<any>(null);
+  const [runs, setRuns] = useState<any[]>([]);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'summary' | 'config' | 'runs' | 'logs' | 'health'>('summary');
+  const [loading, setLoading] = useState(true);
+  const [isTesting, setIsTesting] = useState(false);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
+  }, [connectorId]);
+
+  const fetchData = async () => {
+    try {
+      const [cRes, rRes, lRes] = await Promise.all([
+        fetch(`/v1/connectors/${connectorId}`),
+        fetch(`/v1/connectors/${connectorId}/runs`),
+        fetch(`/v1/connectors/${connectorId}/logs`)
+      ]);
+      setConnector(await cRes.json());
+      setRuns(await rRes.json());
+      setLogs(await lRes.json());
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  };
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    try {
+      const res = await fetch(`/v1/connectors/${connectorId}/test`, { method: 'POST' });
+      if (res.ok) {
+        alert('Prueba de conexión enviada. Revisa los logs en unos segundos.');
+        fetchData();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setIsTesting(false);
+  };
+
+  if (loading || !connector) return <div className="p-8 text-zinc-500 font-mono">LOADING_CONNECTOR_DETAILS...</div>;
+
+  return (
+    <div className="max-w-6xl mx-auto space-y-6 pb-20">
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-zinc-800 rounded-full transition-colors">
             <ChevronRight className="rotate-180" size={20} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Categorization Connector</h1>
-            <p className="text-sm text-zinc-500">Configuración avanzada de proveedores y recarga dinámica.</p>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold tracking-tight">{connector.name}</h1>
+              <span className={cn(
+                "text-[10px] font-mono uppercase px-2 py-0.5 rounded border",
+                connector.status === 'online' ? 'border-emerald-500/20 text-emerald-500' : 
+                connector.status === 'degraded' ? 'border-yellow-500/20 text-yellow-500' : 
+                'border-red-500/20 text-red-500'
+              )}>
+                {connector.status}
+              </span>
+            </div>
+            <p className="text-sm text-zinc-500">{connector.vendor} {connector.version} | {connector.type}</p>
           </div>
         </div>
         <div className="flex gap-3">
           <button 
-            onClick={() => setSelectedProvider({
-              provider_key: '',
-              display_name: '',
-              enabled: true,
-              provider_type: 'api',
-              endpoint: '',
-              auth_type: 'none',
-              auth_payload: {},
-              ttl_seconds: 86400,
-              fetch_interval_seconds: null,
-              config_json: {}
-            })}
-            className="flex items-center gap-2 px-4 py-2 rounded text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-white transition-all"
+            onClick={handleTest}
+            disabled={isTesting}
+            className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-bold hover:bg-zinc-800 transition-colors disabled:opacity-50"
           >
-            <Plus size={14} />
-            NUEVO PROVEEDOR
+            <Play size={14} className={isTesting ? "animate-pulse" : ""} />
+            {isTesting ? 'TESTING...' : t('test_connector')}
           </button>
-          <button 
-            onClick={handleReload}
-            disabled={reloading}
-            className={`flex items-center gap-2 px-4 py-2 rounded text-xs font-bold transition-all ${
-              reloading ? 'bg-zinc-800 text-zinc-500' : 'bg-emerald-500 hover:bg-emerald-600 text-black'
-            }`}
-          >
-            <Activity size={14} className={reloading ? 'animate-spin' : ''} />
-            {reloading ? 'RECARGANDO...' : 'RECARGAR CONFIG'}
+          <button className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-black rounded-lg text-xs font-bold hover:bg-emerald-600 transition-colors">
+            <RefreshCw size={14} />
+            {t('save_changes')}
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl overflow-hidden">
-            <div className="grid grid-cols-5 bg-zinc-900/50 font-mono text-[10px] uppercase tracking-widest text-zinc-500 border-b border-zinc-800 p-4">
-              <div className="col-span-2">Proveedor</div>
-              <div>Tipo</div>
-              <div>Estado</div>
-              <div className="text-right">Acciones</div>
-            </div>
-            {providers.map(p => (
-              <div key={p.provider_key} className="grid grid-cols-5 p-4 border-b border-zinc-800 items-center hover:bg-zinc-800/20 transition-colors">
-                <div className="col-span-2">
-                  <p className="text-sm font-bold">{p.display_name}</p>
-                  <p className="text-[10px] text-zinc-500 font-mono truncate max-w-[200px]">{p.endpoint}</p>
-                </div>
-                <div>
-                  <span className="text-[10px] font-mono uppercase bg-zinc-800 px-2 py-0.5 rounded text-zinc-400">
-                    {p.provider_type}
-                  </span>
-                </div>
-                <div>
-                  <button 
-                    onClick={() => handleToggleProvider(p.provider_key, !p.enabled)}
-                    className={`w-10 h-5 rounded-full transition-colors relative ${p.enabled ? 'bg-emerald-500' : 'bg-zinc-800'}`}
-                  >
-                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${p.enabled ? 'left-5.5' : 'left-0.5'}`} />
-                  </button>
-                </div>
-                <div className="text-right">
-                  <button 
-                    onClick={() => setSelectedProvider(p)}
-                    className="text-xs font-mono text-emerald-500 hover:text-emerald-400 uppercase tracking-tighter"
-                  >
-                    Configurar
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+      <div className="flex border-b border-zinc-800">
+        {[
+          { id: 'summary', label: t('summary'), icon: <Layout size={14} /> },
+          { id: 'config', label: t('config'), icon: <Settings size={14} /> },
+          { id: 'runs', label: t('runs'), icon: <History size={14} /> },
+          { id: 'logs', label: t('logs'), icon: <List size={14} /> },
+          { id: 'health', label: t('health'), icon: <Activity size={14} /> }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={cn(
+              "flex items-center gap-2 px-6 py-3 text-xs font-bold transition-all border-b-2",
+              activeTab === tab.id 
+                ? "border-emerald-500 text-emerald-500 bg-emerald-500/5" 
+                : "border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
+            )}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-          <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-6">
-            <div className="flex gap-4">
-              <Shield className="text-emerald-500 shrink-0" size={24} />
-              <div>
-                <h3 className="text-sm font-bold text-emerald-400 mb-1">Seguridad y Licenciamiento</h3>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Algunos proveedores como Spamhaus requieren licencias comerciales. El sistema bloquea la activación si no se confirma el cumplimiento legal en la configuración del proveedor.
-                </p>
+      <div className="min-h-[400px]">
+        {activeTab === 'summary' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="md:col-span-2 space-y-6">
+              <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 space-y-4">
+                <h3 className="text-xs font-mono text-zinc-500 uppercase tracking-widest">{t('details')}</h3>
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <label className="text-[10px] text-zinc-600 uppercase font-mono block mb-1">{t('connector_id')}</label>
+                    <p className="text-sm font-mono text-zinc-300">{connector.connector_id}</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-600 uppercase font-mono block mb-1">{t('auth_method')}</label>
+                    <p className="text-sm text-zinc-300 uppercase">{connector.auth_method}</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-600 uppercase font-mono block mb-1">{t('ingest_url')}</label>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-mono text-zinc-300 truncate">{connector.ingest_url}</p>
+                      <ExternalLink size={12} className="text-zinc-500" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-600 uppercase font-mono block mb-1">{t('last_sync')}</label>
+                    <p className="text-sm text-zinc-300">{connector.last_success_at ? new Date(connector.last_success_at).toLocaleString() : 'Never'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
+                <h3 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-4">{t('recent_alerts')}</h3>
+                <div className="space-y-2">
+                  {/* Simulation of recent alerts from this connector */}
+                  <div className="text-center py-10 text-zinc-600 text-xs italic">
+                    No hay alertas recientes procesadas por este conector.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
+                <h3 className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-4">{t('metrics')}</h3>
+                <div className="space-y-4">
+                  <MetricRow label={t('received')} value={runs.reduce((acc, r) => acc + (r.alerts_received || 0), 0)} />
+                  <MetricRow label={t('accepted')} value={runs.reduce((acc, r) => acc + (r.alerts_accepted || 0), 0)} color="text-emerald-500" />
+                  <MetricRow label={t('rejected')} value={runs.reduce((acc, r) => acc + (r.alerts_rejected || 0), 0)} color="text-red-500" />
+                  <MetricRow label={t('duplicates')} value={runs.reduce((acc, r) => acc + (r.duplicates || 0), 0)} color="text-yellow-500" />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        <div className="space-y-6">
-          {selectedProvider ? (
-            <motion.div 
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 sticky top-8"
-            >
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xs font-mono text-zinc-500 uppercase">Editar: {selectedProvider.display_name}</h3>
-                <button onClick={() => setSelectedProvider(null)} className="text-zinc-500 hover:text-zinc-300">
-                  <Plus className="rotate-45" size={18} />
-                </button>
-              </div>
-              
+        {activeTab === 'config' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 space-y-6">
+              <h3 className="text-xs font-mono text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                <Settings size={14} />
+                {t('config')}
+              </h3>
               <div className="space-y-4">
-                {!providers.find(p => p.provider_key === selectedProvider.provider_key) && (
-                  <Field 
-                    label="Provider Key (Unique ID)" 
-                    value={selectedProvider.provider_key} 
-                    onChange={(v) => setSelectedProvider({...selectedProvider, provider_key: v})} 
-                    placeholder="ej: my_new_provider"
-                  />
-                )}
-                <Field 
-                  label="Display Name" 
-                  value={selectedProvider.display_name} 
-                  onChange={(v) => setSelectedProvider({...selectedProvider, display_name: v})} 
-                  placeholder="Nombre público..."
-                />
-                <Field 
-                  label="Endpoint" 
-                  value={selectedProvider.endpoint} 
-                  onChange={(v) => setSelectedProvider({...selectedProvider, endpoint: v})} 
-                />
-                
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono text-zinc-500 uppercase">Auth Type</label>
-                  <select 
-                    value={selectedProvider.auth_type}
-                    onChange={(e) => setSelectedProvider({...selectedProvider, auth_type: e.target.value})}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50 text-zinc-300"
-                  >
-                    <option value="none">None</option>
-                    <option value="api_key">API Key</option>
-                    <option value="vault">Vault Secret</option>
-                    <option value="bearer">Bearer Token</option>
-                  </select>
-                </div>
-
-                {selectedProvider.auth_type === 'api_key' && (
-                  <Field 
-                    label="API Key" 
-                    value={selectedProvider.auth_payload.api_key || ''} 
-                    onChange={(v) => setSelectedProvider({
-                      ...selectedProvider, 
-                      auth_payload: { ...selectedProvider.auth_payload, api_key: v }
-                    })} 
-                    placeholder="Introducir clave..."
+                  <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">JSON Configuration</label>
+                  <textarea 
+                    className="w-full h-64 bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-xs font-mono text-emerald-500 focus:outline-none focus:border-emerald-500/50"
+                    value={JSON.stringify(connector.config, null, 2)}
+                    readOnly
                   />
-                )}
-
-                {selectedProvider.auth_type === 'vault' && (
-                  <Field 
-                    label="Vault Path" 
-                    value={selectedProvider.auth_payload.vault || ''} 
-                    onChange={(v) => setSelectedProvider({
-                      ...selectedProvider, 
-                      auth_payload: { ...selectedProvider.auth_payload, vault: v }
-                    })} 
-                    placeholder="secret/data/prov/..."
-                  />
-                )}
-
-                <div className="grid grid-cols-2 gap-4">
-                  <Field 
-                    label="TTL (sec)" 
-                    value={selectedProvider.ttl_seconds.toString()} 
-                    onChange={(v) => setSelectedProvider({...selectedProvider, ttl_seconds: parseInt(v) || 0})} 
-                  />
-                  <Field 
-                    label="Fetch Int (sec)" 
-                    value={(selectedProvider.fetch_interval_seconds || '').toString()} 
-                    onChange={(v) => setSelectedProvider({...selectedProvider, fetch_interval_seconds: parseInt(v) || null})} 
-                  />
-                </div>
-
-                <div className="pt-4">
-                  <button 
-                    onClick={() => {
-                      if (providers.find(p => p.provider_key === selectedProvider.provider_key)) {
-                        saveProvider(selectedProvider.provider_key, selectedProvider);
-                      } else {
-                        // Create new
-                        fetch('/api/connectors/categorization/providers', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify(selectedProvider)
-                        }).then(() => {
-                          setSelectedProvider(null);
-                          fetchProviders();
-                        });
-                      }
-                    }}
-                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-black py-2 rounded text-xs font-bold transition-colors"
-                  >
-                    {providers.find(p => p.provider_key === selectedProvider.provider_key) ? 'Guardar Cambios' : 'Crear Proveedor'}
-                  </button>
                 </div>
               </div>
-            </motion.div>
-          ) : (
-            <div className="bg-zinc-900/30 border border-dashed border-zinc-800 rounded-xl p-12 text-center">
-              <Settings className="mx-auto text-zinc-700 mb-4" size={32} />
-              <p className="text-xs text-zinc-500 font-mono uppercase">Selecciona un proveedor para editar su configuración o crea uno nuevo</p>
             </div>
-          )}
-        </div>
+
+            <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 space-y-6">
+              <h3 className="text-xs font-mono text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                <Code size={14} />
+                {t('config_schema')}
+              </h3>
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">JSON Schema</label>
+                  <textarea 
+                    className="w-full h-64 bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-xs font-mono text-zinc-400 focus:outline-none focus:border-emerald-500/50"
+                    value={JSON.stringify(connector.config_schema, null, 2)}
+                    readOnly
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'runs' && (
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl overflow-hidden">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-zinc-900/50 text-zinc-500 font-mono uppercase text-[10px]">
+                <tr>
+                  <th className="px-6 py-3">{t('started_at')}</th>
+                  <th className="px-6 py-3">{t('result')}</th>
+                  <th className="px-6 py-3">{t('received')}</th>
+                  <th className="px-6 py-3">{t('accepted')}</th>
+                  <th className="px-6 py-3">{t('rejected')}</th>
+                  <th className="px-6 py-3">{t('trace_id')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {runs.map(run => (
+                  <tr key={run.run_id} className="hover:bg-zinc-900/30 transition-colors">
+                    <td className="px-6 py-4 text-zinc-400">{new Date(run.started_at).toLocaleString()}</td>
+                    <td className="px-6 py-4">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase",
+                        run.result === 'success' ? "bg-emerald-500/10 text-emerald-500" : 
+                        run.result === 'partial' ? "bg-yellow-500/10 text-yellow-500" : 
+                        "bg-red-500/10 text-red-500"
+                      )}>
+                        {run.result}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-zinc-300">{run.alerts_received}</td>
+                    <td className="px-6 py-4 text-emerald-500">{run.alerts_accepted}</td>
+                    <td className="px-6 py-4 text-red-500">{run.alerts_rejected}</td>
+                    <td className="px-6 py-4 font-mono text-[10px] text-zinc-600">{run.trace_id}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {activeTab === 'logs' && (
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/20">
+              <h3 className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Live Log Stream</h3>
+              <div className="flex gap-2">
+                <button className="p-1 hover:bg-zinc-800 rounded text-zinc-500"><RefreshCw size={14} /></button>
+              </div>
+            </div>
+            <div className="p-4 font-mono text-[11px] space-y-1 max-h-[500px] overflow-y-auto">
+              {logs.map((log, idx) => (
+                <div key={idx} className="flex gap-4 hover:bg-zinc-900/50 py-1 px-2 rounded transition-colors group">
+                  <span className="text-zinc-600 shrink-0">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                  <span className={cn(
+                    "font-bold shrink-0 w-12",
+                    log.level === 'ERROR' ? 'text-red-500' : log.level === 'WARN' ? 'text-yellow-500' : 'text-blue-400'
+                  )}>{log.level}</span>
+                  <span className="text-zinc-500 shrink-0">[{log.direction}]</span>
+                  <span className="text-zinc-300 flex-1">{log.message}</span>
+                  <span className="text-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity">{log.trace_id}</span>
+                </div>
+              ))}
+              {logs.length === 0 && (
+                <div className="text-center py-10 text-zinc-700 italic">No hay logs disponibles.</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+function MetricRow({ label, value, color = "text-zinc-300" }: { label: string, value: number, color?: string }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-[11px] text-zinc-500 uppercase font-mono">{label}</span>
+      <span className={cn("text-lg font-bold font-mono", color)}>{value.toLocaleString()}</span>
+    </div>
+  );
+}
 /**
  * Vista de Configuración del Sistema (Admin)
  * Permite gestionar idioma, etiquetas de categorías y ver logs de depuración.
@@ -2176,7 +2792,7 @@ function ClientManagement({ clients, onUpdate, onConfigure }: { clients: Client[
   );
 }
 
-function ClientConfigView({ clientId, onBack }: { clientId: number, onBack: () => void }) {
+function ClientConfigView({ clientId, user, onBack }: { clientId: number, user: any, onBack: () => void }) {
   const [config, setConfig] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'modules' | 'technical' | 'details' | 'contacts'>('modules');
   const [loading, setLoading] = useState(true);
@@ -2211,12 +2827,20 @@ function ClientConfigView({ clientId, onBack }: { clientId: number, onBack: () =
   };
 
   const addAsset = async (type: string, data: any) => {
-    await fetch(`/api/clients/${clientId}/assets`, {
+    const res = await fetch(`/api/clients/${clientId}/assets`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-user': user?.username || ''
+      },
       body: JSON.stringify({ type, data })
     });
-    fetchConfig();
+    if (res.ok) {
+      fetchConfig();
+    } else {
+      const err = await res.json();
+      alert(err.error || "Error al añadir activo técnico");
+    }
   };
 
   const deleteAsset = async (id: number) => {
@@ -2351,6 +2975,11 @@ function TechnicalConfig({ assets, onAdd, onDelete }: { assets: any[], onAdd: (t
           {assets.filter(a => a.type === activeCategory).map(asset => (
             <div key={asset.id} className="bg-[#0d0d0d] border border-zinc-800 rounded-lg p-4 flex justify-between items-start group">
               <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-mono text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                    {asset.asset_uid}
+                  </span>
+                </div>
                 <AssetDisplay type={asset.type} data={asset.data} />
               </div>
               <button onClick={() => onDelete(asset.id)} className="text-zinc-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
@@ -2370,12 +2999,12 @@ function AssetForm({ type, onAdd }: { type: string, onAdd: (type: string, data: 
 
   const validate = () => {
     if (type === 'domain') {
-      const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$/;
-      if (!domainRegex.test(formData.value)) return 'Formato de dominio inválido (ej: google.com)';
+      const domainRegex = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+      if (!domainRegex.test(formData.value)) return 'Formato de dominio inválido (ej: google.com o sub.google.com)';
     }
     if (type === 'email_domain') {
-      const emailDomainRegex = /^@[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$/;
-      if (!emailDomainRegex.test(formData.value)) return 'Formato de dominio de correo inválido (ej: @google.com)';
+      const emailDomainRegex = /^@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+      if (!emailDomainRegex.test(formData.value)) return 'Formato de dominio de correo inválido (ej: @google.com o @sub.google.com)';
     }
     if (type === 'ip') {
       const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
@@ -2412,19 +3041,13 @@ function AssetForm({ type, onAdd }: { type: string, onAdd: (type: string, data: 
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {type === 'domain' && (
-          <>
-            <Field label="Dominio" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} placeholder="ej: empresa.com" />
-            <Field label="Hosting (Opcional)" value={formData.hosting} onChange={(v) => setFormData({...formData, hosting: v})} placeholder="ej: AWS, Azure..." />
-          </>
+          <Field label="Dominio" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} placeholder="ej: empresa.com" />
         )}
         {type === 'email_domain' && (
           <Field label="Dominio de Correo" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} placeholder="ej: @empresa.com" />
         )}
         {type === 'ip' && (
-          <>
-            <Field label="IP o Rango" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} placeholder="ej: 1.2.3.4 o 1.2.3.0/24" />
-            <Field label="Hosting (Opcional)" value={formData.hosting} onChange={(v) => setFormData({...formData, hosting: v})} placeholder="ej: DigitalOcean..." />
-          </>
+          <Field label="IP o Rango" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} placeholder="ej: 1.2.3.4 o 1.2.3.0/24" />
         )}
         {type === 'brand' && (
           <Field label="Marca" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} />
@@ -2441,17 +3064,20 @@ function AssetForm({ type, onAdd }: { type: string, onAdd: (type: string, data: 
         {type === 'technology' && (
           <>
             <Field label="Tecnología" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} />
-            <Field label="Tipo Tecnológico" value={formData.tech_type} onChange={(v) => setFormData({...formData, tech_type: v})} />
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">Tipo Tecnológico</label>
+              <select 
+                value={formData.tech_type || ''} 
+                onChange={(e) => setFormData({...formData, tech_type: e.target.value})}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-emerald-500/50"
+              >
+                <option value="">Seleccionar tipo...</option>
+                {['Web Server', 'Framework', 'Firewall', 'Cloud Service', 'Load Balancer', 'Database', 'CMS', 'SaaS', 'Operating System'].map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
             <Field label="Versión (CPE)" value={formData.cpe} onChange={(v) => setFormData({...formData, cpe: v})} placeholder="ej: cpe:2.3:a:apache:http_server:2.4.1" />
-          </>
-        )}
-        {type === 'app' && (
-          <>
-            <Field label="Nombre APP" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} />
-            <Field label="Desarrollador" value={formData.developer} onChange={(v) => setFormData({...formData, developer: v})} />
-            <Field label="Firma Desarrollador" value={formData.signature} onChange={(v) => setFormData({...formData, signature: v})} />
-            <Field label="URL Oficial" value={formData.url} onChange={(v) => setFormData({...formData, url: v})} />
-            <Field label="SHA256" value={formData.sha256} onChange={(v) => setFormData({...formData, sha256: v})} />
           </>
         )}
         {type === 'social' && (
@@ -2459,32 +3085,38 @@ function AssetForm({ type, onAdd }: { type: string, onAdd: (type: string, data: 
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono text-zinc-500 uppercase">Red Social</label>
               <select 
-                value={formData.social_type || ''} 
-                onChange={(e) => setFormData({...formData, social_type: e.target.value})}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+                value={formData.network || ''} 
+                onChange={(e) => setFormData({...formData, network: e.target.value})}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-emerald-500/50"
               >
-                <option value="">Seleccionar...</option>
-                <option value="facebook">Facebook</option>
-                <option value="twitter">Twitter / X</option>
-                <option value="instagram">Instagram</option>
-                <option value="tiktok">TikTok</option>
-                <option value="linkedin">LinkedIn</option>
-                <option value="youtube">YouTube</option>
+                <option value="">Seleccionar red...</option>
+                {['LinkedIn', 'X (Twitter)', 'Facebook', 'Instagram', 'GitHub', 'Telegram', 'YouTube'].map(n => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
               </select>
             </div>
-            <Field label="URL Perfil" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} />
+            <Field label="URL Perfil" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} placeholder="https://..." />
           </>
         )}
         {type === 'vip' && (
           <>
-            <Field label="Nombre VIP" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} />
-            <Field label="Correo VIP" value={formData.email} onChange={(v) => setFormData({...formData, email: v})} />
+            <Field label="Nombre Completo" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} />
+            <Field label="Cargo" value={formData.position} onChange={(v) => setFormData({...formData, position: v})} />
+            <Field label="Email" value={formData.email} onChange={(v) => setFormData({...formData, email: v})} />
             <Field label="RRSS VIP" value={formData.social} onChange={(v) => setFormData({...formData, social: v})} />
-            <Field label="Cargo VIP" value={formData.position} onChange={(v) => setFormData({...formData, position: v})} />
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono text-zinc-500 uppercase">Foto VIP</label>
               <input type="file" accept="image/*" onChange={handleFileChange} className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-xs" />
             </div>
+          </>
+        )}
+        {type === 'app' && (
+          <>
+            <Field label="Nombre APP" value={formData.value} onChange={(v) => setFormData({...formData, value: v})} placeholder="Alfanumérico, max 100" />
+            <Field label="Desarrollador" value={formData.developer} onChange={(v) => setFormData({...formData, developer: v})} />
+            <Field label="Firma Desarrollador" value={formData.signature} onChange={(v) => setFormData({...formData, signature: v})} placeholder="SHA1 o SHA256 Hex" />
+            <Field label="URL Oficial" value={formData.url} onChange={(v) => setFormData({...formData, url: v})} placeholder="https://..." />
+            <Field label="SHA256 App" value={formData.sha256} onChange={(v) => setFormData({...formData, sha256: v})} placeholder="64 caracteres Hex" />
           </>
         )}
       </div>
@@ -2501,10 +3133,10 @@ function AssetForm({ type, onAdd }: { type: string, onAdd: (type: string, data: 
 }
 
 function AssetDisplay({ type, data }: { type: string, data: any }) {
-  if (type === 'logo') return <img src={data.value} className="h-12 w-auto rounded border border-zinc-800" alt="Logo" />;
+  if (type === 'logo') return <img src={data.path || data.value} className="h-12 w-auto rounded border border-zinc-800" alt="Logo" />;
   if (type === 'vip') return (
     <div className="flex gap-3 items-center">
-      {data.value && <img src={data.value} className="w-10 h-10 rounded-full object-cover border border-zinc-800" alt="VIP" />}
+      {data.value && <img src={data.path || data.value} className="w-10 h-10 rounded-full object-cover border border-zinc-800" alt="VIP" />}
       <div>
         <p className="text-sm font-medium">{data.value}</p>
         <p className="text-[10px] text-zinc-500 font-mono">{data.position} • {data.email}</p>
@@ -2525,15 +3157,14 @@ function AssetDisplay({ type, data }: { type: string, data: any }) {
   );
   if (type === 'social') return (
     <div>
-      <p className="text-[10px] font-mono text-emerald-500 uppercase">{data.social_type}</p>
+      <p className="text-[10px] font-mono text-emerald-500 uppercase">{data.network}</p>
       <p className="text-sm font-medium truncate max-w-[200px]">{data.value}</p>
     </div>
   );
   
   return (
     <div>
-      <p className="text-sm font-medium">{data.value}</p>
-      {data.hosting && <p className="text-[10px] text-zinc-500 font-mono">Hosting: {data.hosting}</p>}
+      <p className="text-sm font-medium break-all">{data.value}</p>
     </div>
   );
 }
@@ -2698,7 +3329,7 @@ function ContactManagement({ contacts, onAdd, onDelete }: { contacts: any[], onA
 /**
  * Vista de Login
  */
-function LoginView({ onLogin, error, loading }: { onLogin: (u: string, p: string) => void, error: string | null, loading: boolean }) {
+function LoginView({ onLogin, error, loading, t }: { onLogin: (u: string, p: string) => void, error: string | null, loading: boolean, t: any }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
@@ -2745,7 +3376,7 @@ function LoginView({ onLogin, error, loading }: { onLogin: (u: string, p: string
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Contraseña</label>
+              <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">{t('current_password')}</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-2.5 text-zinc-600" size={16} />
                 <input 
@@ -2779,6 +3410,159 @@ function LoginView({ onLogin, error, loading }: { onLogin: (u: string, p: string
         <p className="text-center text-[10px] text-zinc-600 font-mono uppercase tracking-widest">
           Acceso restringido a personal autorizado
         </p>
+      </div>
+    </div>
+  );
+}
+
+function UserProfileView({ user, t, lang, setLang, onBack }: { user: any, t: any, lang: Language, setLang: (l: Language) => void, onBack: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setStatus({ type: 'error', message: 'Las contraseñas no coinciden' });
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/change-password', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user': user.username
+        },
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      if (res.ok) {
+        setStatus({ type: 'success', message: t('password_changed_success') });
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        const err = await res.json();
+        setStatus({ type: 'error', message: err.error || t('error_changing_password') });
+      }
+    } catch (e) {
+      setStatus({ type: 'error', message: t('error_changing_password') });
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="p-8 max-w-4xl mx-auto space-y-8">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+            <Users size={24} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold">{t('user_profile')}</h2>
+            <p className="text-zinc-500 font-mono text-xs uppercase tracking-widest">{user.username} • {user.role}</p>
+          </div>
+        </div>
+        <button 
+          onClick={onBack}
+          className="px-4 py-2 text-xs font-mono uppercase tracking-widest text-zinc-500 hover:text-zinc-100 transition-colors"
+        >
+          Volver
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Language Settings */}
+        <div className="bg-[#0d0d0d] border border-zinc-800 rounded-2xl p-6 space-y-6">
+          <div className="flex items-center gap-3">
+            <Languages className="text-emerald-500" size={20} />
+            <h3 className="text-sm font-bold uppercase tracking-widest">{t('language')}</h3>
+          </div>
+          <div className="space-y-4">
+            <p className="text-xs text-zinc-500">{t('select_language')}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button 
+                onClick={() => setLang('es')}
+                className={cn(
+                  "p-4 rounded-xl border transition-all flex flex-col items-center gap-2",
+                  lang === 'es' ? "bg-emerald-500/10 border-emerald-500 text-emerald-500" : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700"
+                )}
+              >
+                <span className="text-xl">🇪🇸</span>
+                <span className="text-xs font-bold">{t('spanish')}</span>
+              </button>
+              <button 
+                onClick={() => setLang('en')}
+                className={cn(
+                  "p-4 rounded-xl border transition-all flex flex-col items-center gap-2",
+                  lang === 'en' ? "bg-emerald-500/10 border-emerald-500 text-emerald-500" : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700"
+                )}
+              >
+                <span className="text-xl">🇺🇸</span>
+                <span className="text-xs font-bold">{t('english')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Password Settings */}
+        <div className="bg-[#0d0d0d] border border-zinc-800 rounded-2xl p-6 space-y-6">
+          <div className="flex items-center gap-3">
+            <Key className="text-emerald-500" size={20} />
+            <h3 className="text-sm font-bold uppercase tracking-widest">{t('change_password')}</h3>
+          </div>
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('current_password')}</label>
+              <input 
+                type="password" 
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('new_password')}</label>
+              <input 
+                type="password" 
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono text-zinc-500 uppercase">{t('confirm_password')}</label>
+              <input 
+                type="password" 
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+                required
+              />
+            </div>
+
+            {status && (
+              <div className={cn(
+                "p-3 rounded-lg text-[10px] font-mono uppercase",
+                status.type === 'success' ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" : "bg-red-500/10 text-red-500 border border-red-500/20"
+              )}>
+                {status.message}
+              </div>
+            )}
+
+            <button 
+              type="submit"
+              disabled={loading}
+              className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-black font-bold py-2 rounded-lg text-xs transition-all"
+            >
+              {loading ? t('initializing') : t('save_changes')}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
