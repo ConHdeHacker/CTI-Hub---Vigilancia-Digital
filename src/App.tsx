@@ -38,6 +38,9 @@ import {
   RefreshCw,
   ExternalLink,
   Code,
+  HelpCircle,
+  ArrowUpRight,
+  ArrowDownRight,
   Activity as ActivityIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1465,10 +1468,13 @@ function DocumentationView({ t }: { t: any }) {
     { id: 'overview', label: 'Visión General', icon: <Globe size={16} /> },
     { id: 'alerts', label: 'Gestión de Alertas', icon: <AlertTriangle size={16} /> },
     { id: 'connectors', label: 'Conectores & API', icon: <Cpu size={16} /> },
+    { id: 'workflows', label: 'Flujos de Trabajo', icon: <RefreshCw size={16} /> },
     { id: 'auth', label: 'Autenticación', icon: <Lock size={16} /> },
     { id: 'clients', label: 'Multi-tenancy', icon: <Users size={16} /> },
     { id: 'queue', label: 'Cola de Mensajes', icon: <RefreshCw size={16} /> },
     { id: 'secrets', label: 'Gestión de Secretos', icon: <Shield size={16} /> },
+    { id: 'best_practices', label: 'Mejores Prácticas', icon: <CheckCircle2 size={16} /> },
+    { id: 'troubleshooting', label: 'Solución de Problemas', icon: <AlertTriangle size={16} /> },
     { id: 'api_reference', label: 'Referencia API', icon: <Code size={16} /> }
   ];
 
@@ -1495,206 +1501,527 @@ function DocumentationView({ t }: { t: any }) {
       {/* Doc Content */}
       <div className="flex-1 bg-[#0d0d0d] border border-zinc-800 rounded-2xl p-10 min-h-[70vh] prose prose-invert prose-emerald max-w-none overflow-y-auto">
         {activeSection === 'overview' && (
-          <div className="space-y-6">
+          <div className="space-y-8">
             <h1 className="text-3xl font-bold tracking-tight text-white m-0">Visión General de la Plataforma</h1>
-            <p className="text-zinc-400 leading-relaxed">
-              Vigilancia CTI es una plataforma de inteligencia de amenazas diseñada para centralizar la ingestión, normalización y gestión de alertas de seguridad. 
-              La arquitectura se divide en dos planos principales:
+            <p className="text-zinc-400 leading-relaxed text-lg">
+              Vigilancia CTI es un ecosistema de ciberinteligencia de última generación diseñado para resolver el problema de la fragmentación de datos en los centros de operaciones de seguridad (SOC). 
+              Nuestra misión es proporcionar una capa única de verdad donde la inteligencia de amenazas se ingesta, normaliza y enriquece automáticamente.
             </p>
-            <div className="grid grid-cols-2 gap-6 not-prose">
-              <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                <h4 className="text-emerald-400 font-bold mb-2">Control Plane</h4>
-                <p className="text-xs text-zinc-500">Gestión centralizada de conectores, configuración de clientes, usuarios y observabilidad del sistema.</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 not-prose">
+              <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-2xl group hover:border-emerald-500/50 transition-all">
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 mb-4">
+                  <Cpu size={20} />
+                </div>
+                <h4 className="text-white font-bold mb-2">Control Plane (Gestión)</h4>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Orquestación centralizada. Aquí es donde se definen los conectores, se gestionan las claves de API, se configuran los activos de los clientes y se monitoriza la salud global del sistema.
+                </p>
               </div>
-              <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-                <h4 className="text-blue-400 font-bold mb-2">Data Plane</h4>
-                <p className="text-xs text-zinc-500">Ingestión de alertas normalizadas a escala, exportación de datos y procesamiento de eventos en tiempo real.</p>
+              <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-2xl group hover:border-blue-500/50 transition-all">
+                <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400 mb-4">
+                  <RefreshCw size={20} />
+                </div>
+                <h4 className="text-white font-bold mb-2">Data Plane (Procesamiento)</h4>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  El motor de alto rendimiento. Se encarga de la ingesta masiva, la validación HMAC en tiempo real, el encolado de mensajes y la normalización de eventos al esquema AlertEnvelope.
+                </p>
               </div>
             </div>
-            <h2 className="text-xl font-bold text-white">Objetivos Clave</h2>
-            <ul className="text-zinc-400 text-sm">
-              <li>Centralización de fuentes de inteligencia dispares.</li>
-              <li>Normalización de eventos bajo un esquema común (AlertEnvelope).</li>
-              <li>Visibilidad multi-cliente con aislamiento estricto de datos.</li>
-              <li>Automatización de la respuesta mediante exportación de deltas.</li>
-            </ul>
+
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-white">Pilares de la Arquitectura</h2>
+              <div className="grid grid-cols-1 gap-4">
+                {[
+                  { title: 'Normalización Universal', desc: 'Convertimos logs propietarios de vendors (Microsoft, Crowdstrike, Cloudflare) en un formato estándar legible por humanos y máquinas.' },
+                  { title: 'Aislamiento Multi-tenant', desc: 'Garantizamos que los datos de un cliente nunca sean visibles para otro, incluso compartiendo la misma infraestructura de conectores.' },
+                  { title: 'Escalabilidad Elástica', desc: 'Gracias a nuestra arquitectura basada en colas, podemos absorber picos de tráfico de miles de alertas por segundo sin pérdida de datos.' },
+                  { title: 'Seguridad Zero-Trust', desc: 'No almacenamos secretos. Integramos referencias a gestores de secretos externos para máxima protección de credenciales.' }
+                ].map((item, i) => (
+                  <div key={i} className="flex gap-4 p-4 bg-zinc-900/30 border border-zinc-800 rounded-xl">
+                    <div className="text-emerald-500 font-mono text-xs">0{i+1}</div>
+                    <div>
+                      <h4 className="text-sm font-bold text-zinc-200">{item.title}</h4>
+                      <p className="text-xs text-zinc-500 mt-1">{item.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
         {activeSection === 'alerts' && (
-          <div className="space-y-6">
-            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Gestión de Alertas</h1>
-            <p className="text-zinc-400">
-              El módulo de alertas es el núcleo operativo de la plataforma. Permite visualizar, categorizar y gestionar el ciclo de vida de cada incidente.
+          <div className="space-y-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Gestión de Alertas e Incidentes</h1>
+            <p className="text-zinc-400 leading-relaxed">
+              El módulo de alertas es el centro neurálgico donde los analistas de seguridad interactúan con la inteligencia procesada. 
+              Cada alerta en Vigilancia CTI es más que un simple log; es un objeto enriquecido con contexto de cliente y observables accionables.
             </p>
-            <h3 className="text-lg font-bold text-emerald-400">Ciclo de Vida</h3>
-            <div className="flex items-center gap-4 not-prose">
-              {['New', 'In Progress', 'Resolved', 'Closed'].map((step, i) => (
-                <React.Fragment key={step}>
-                  <div className="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded text-[10px] font-mono uppercase">{step}</div>
-                  {i < 3 && <ChevronRight size={12} className="text-zinc-700" />}
-                </React.Fragment>
-              ))}
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-bold text-emerald-400">Ciclo de Vida de una Alerta</h3>
+              <p className="text-sm text-zinc-500 italic">El flujo de estado está diseñado para integrarse con procesos de respuesta a incidentes (IR).</p>
+              <div className="flex flex-wrap items-center gap-4 not-prose">
+                {[
+                  { label: 'New', color: 'bg-blue-500/10 text-blue-400', desc: 'Recién ingresada, pendiente de triaje.' },
+                  { label: 'In Progress', color: 'bg-yellow-500/10 text-yellow-400', desc: 'Asignada a un analista para investigación.' },
+                  { label: 'Resolved', color: 'bg-emerald-500/10 text-emerald-400', desc: 'Amenaza mitigada o confirmada.' },
+                  { label: 'Closed', color: 'bg-zinc-800 text-zinc-500', desc: 'Archivo histórico, no requiere más acción.' }
+                ].map((step, i) => (
+                  <div key={step.label} className="flex items-center gap-4">
+                    <div className="group relative">
+                      <div className={cn("px-4 py-2 rounded-lg border border-zinc-800 font-mono text-[10px] uppercase font-bold", step.color)}>
+                        {step.label}
+                      </div>
+                      <div className="absolute top-full left-0 mt-2 w-48 p-2 bg-zinc-900 border border-zinc-800 rounded text-[10px] text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+                        {step.desc}
+                      </div>
+                    </div>
+                    {i < 3 && <ChevronRight size={14} className="text-zinc-700" />}
+                  </div>
+                ))}
+              </div>
             </div>
-            <h3 className="text-lg font-bold text-emerald-400">API de Consulta</h3>
-            <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs">
-{`GET /api/alerts?client_id=1&status=new&severity=high
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-bold text-emerald-400">Severidad y Priorización</h3>
+              <div className="grid grid-cols-4 gap-4 not-prose">
+                {['Critical', 'High', 'Medium', 'Low'].map(sev => (
+                  <div key={sev} className="p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl text-center">
+                    <div className={cn(
+                      "text-[10px] font-bold uppercase mb-1",
+                      sev === 'Critical' ? 'text-red-500' : sev === 'High' ? 'text-orange-500' : sev === 'Medium' ? 'text-yellow-500' : 'text-blue-500'
+                    )}>{sev}</div>
+                    <div className="text-[9px] text-zinc-600">SLA: {sev === 'Critical' ? '15m' : sev === 'High' ? '1h' : '4h'}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-bold text-emerald-400">Filtrado Avanzado (API)</h3>
+              <p className="text-sm text-zinc-400">Nuestra API permite realizar consultas complejas para alimentar dashboards externos o herramientas de ticketing.</p>
+              <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs">
+{`// Ejemplo de consulta para alertas críticas activas de un cliente específico
+GET /api/alerts?client_id=1&status=new,in_progress&severity=critical,high&limit=50
 
 Response:
 [
   {
-    "id": 123,
-    "title": "Detección de Phishing",
-    "severity": "high",
+    "id": "AL-99283",
+    "title": "Brute Force Attack Detected",
+    "severity": "critical",
     "status": "new",
-    "category": "Brand Protection",
-    ...
+    "category": "Identity",
+    "client_name": "Corporación ACME",
+    "observables_count": 3,
+    "created_at": "2024-03-22T14:20:00Z"
   }
 ]`}
-            </pre>
+              </pre>
+            </div>
           </div>
         )}
 
         {activeSection === 'connectors' && (
-          <div className="space-y-8">
-            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Conectores & API de Ingestión</h1>
-            
-            <section>
-              <h2 className="text-xl font-bold text-emerald-400">Ingestión de Alertas (Push)</h2>
-              <p className="text-zinc-400">
-                El método recomendado para enviar alertas es mediante el endpoint de ingestión generado para cada conector.
+          <div className="space-y-10">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">La Biblia de los Conectores</h1>
+            <p className="text-zinc-400 leading-relaxed text-lg">
+              Los conectores son los "adaptadores" que permiten a Vigilancia CTI hablar con el mundo exterior. 
+              Un conector bien configurado es la diferencia entre ruido inútil e inteligencia accionable.
+            </p>
+
+            <section className="space-y-6">
+              <h2 className="text-xl font-bold text-emerald-400 border-b border-zinc-800 pb-2">Arquitectura de Conectores</h2>
+              <p className="text-sm text-zinc-400 leading-relaxed">
+                Un conector en Vigilancia CTI es una entidad lógica que define un canal de comunicación seguro entre un sistema externo (SIEM, EDR, Scanner) y nuestro motor de normalización. 
+                Soporta dos paradigmas principales de flujo de datos:
               </p>
-              <div className="bg-zinc-950 rounded-lg p-4 font-mono text-xs border border-zinc-800 not-prose">
-                <p className="text-emerald-500 font-bold mb-2">POST /v1/ingest/{"{connector_id}"}/alerts</p>
-                <p className="text-zinc-500 mb-4">Headers:</p>
-                <ul className="list-none p-0 space-y-1 text-zinc-400">
-                  <li><span className="text-zinc-600">Authorization:</span> HMAC {"{signature}"}</li>
-                  <li><span className="text-zinc-600">X-Timestamp:</span> {"{unix_timestamp}"}</li>
-                  <li><span className="text-zinc-600">X-Nonce:</span> {"{random_string}"}</li>
-                  <li><span className="text-zinc-600">X-Trace-Id:</span> {"{uuid}"} (Opcional)</li>
-                </ul>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 not-prose">
+                <div className="p-6 bg-zinc-900/30 border border-zinc-800 rounded-2xl">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                      <ArrowUpRight size={20} />
+                    </div>
+                    <h4 className="text-white font-bold">Modo Ingestión (Push)</h4>
+                  </div>
+                  <p className="text-xs text-zinc-500 leading-relaxed mb-4">
+                    El sistema externo envía las alertas activamente a nuestro endpoint. Es el modo recomendado para SIEMs (Sentinel, Splunk) y EDRs que soportan webhooks.
+                  </p>
+                  <ul className="text-[10px] text-zinc-600 space-y-1 list-disc ml-4">
+                    <li>Latencia casi cero.</li>
+                    <li>Requiere configuración de Webhooks en el origen.</li>
+                    <li>Validación obligatoria mediante HMAC.</li>
+                  </ul>
+                </div>
+                <div className="p-6 bg-zinc-900/30 border border-zinc-800 rounded-2xl">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                      <ArrowDownRight size={20} />
+                    </div>
+                    <h4 className="text-white font-bold">Modo Polling (Pull)</h4>
+                  </div>
+                  <p className="text-xs text-zinc-500 leading-relaxed mb-4">
+                    Vigilancia CTI consulta periódicamente la API del vendor para extraer nuevos eventos. Necesario para herramientas que no soportan notificaciones activas.
+                  </p>
+                  <ul className="text-[10px] text-zinc-600 space-y-1 list-disc ml-4">
+                    <li>Latencia dependiente del intervalo de polling.</li>
+                    <li>Requiere credenciales persistentes (API Key/OAuth).</li>
+                    <li>Ideal para Scanners de Vulnerabilidades.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <h3 className="text-lg font-bold text-emerald-400 mt-8">Guía Maestra de Integración</h3>
+              <p className="text-sm text-zinc-400">Sigue estos pasos para integrar cualquier nueva fuente de datos en menos de 5 minutos.</p>
+              
+              <div className="space-y-4">
+                {[
+                  { step: '1', title: 'Definición del Conector', desc: 'Crea el conector en el panel de "Conectores Globales". Define el vendor, la versión y el método de autenticación deseado (HMAC recomendado).' },
+                  { step: '2', title: 'Configuración de Secretos', desc: 'Asigna un "Secrets Reference" (ej: vault/prod/sentinel_key). No pegues la clave directamente; usa el puntero al gestor de secretos.' },
+                  { step: '3', title: 'Mapeo de Esquema', desc: 'Define el config_schema para que el sistema sepa qué campos adicionales (ej: region, subscription_id) requiere este conector específico.' },
+                  { step: '4', title: 'Prueba de Conexión', desc: 'Usa el botón "Probar Conexión" en el detalle del conector. Esto enviará un evento sintético a la cola para verificar el flujo completo.' },
+                  { step: '5', title: 'Activación de Webhook', desc: 'Copia la "Ingest URL" generada y configúrala en el sistema origen, asegurándote de incluir el header X-Sentinel-Signature.' }
+                ].map((item, i) => (
+                  <div key={i} className="flex gap-4 p-4 bg-zinc-900/20 border border-zinc-800 rounded-xl">
+                    <div className="w-8 h-8 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center text-xs font-bold text-emerald-500 shrink-0">
+                      {item.step}
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white mb-1">{item.title}</h4>
+                      <p className="text-[10px] text-zinc-500 leading-relaxed">{item.desc}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </section>
 
-            <section>
-              <h2 className="text-xl font-bold text-emerald-400">Ejemplo de Payload (AlertEnvelope)</h2>
-              <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs">
-{`[
-  {
-    "event_id": "550e8400-e29b-41d4-a716-446655440000",
-    "event_time": "2024-03-20T10:00:00Z",
-    "client_id": 1,
-    "category": "Malware",
-    "severity": "high",
-    "title": "Detección de Ransomware en Endpoint",
-    "description": "Se ha detectado actividad sospechosa...",
-    "observables": [
-      { "type": "ip", "value": "1.2.3.4" },
-      { "type": "hash", "value": "a94a8fe5ccb19ba61c4c..." }
-    ],
-    "raw": {
-      "original_log": "..."
-    }
+            <section className="space-y-6">
+              <h2 className="text-xl font-bold text-emerald-400 border-b border-zinc-800 pb-2">Ejemplos de Configuración</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-white">Microsoft Sentinel (Webhook)</h4>
+                  <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-[10px] text-zinc-500">
+{`{
+  "workspace_id": "...",
+  "tenant_id": "...",
+  "auth": {
+    "type": "hmac",
+    "secret_ref": "vault/sentinel_key"
   }
-]`}
-              </pre>
+}`}
+                  </pre>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-white">Crowdstrike (Polling)</h4>
+                  <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-[10px] text-zinc-500">
+{`{
+  "client_id": "...",
+  "base_url": "https://api.crowdstrike.com",
+  "polling": {
+    "interval_minutes": 15
+  }
+}`}
+                  </pre>
+                </div>
+              </div>
             </section>
+          </div>
+        )}
+
+        {activeSection === 'workflows' && (
+          <div className="space-y-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Flujos de Trabajo y Automatización</h1>
+            <p className="text-zinc-400 leading-relaxed">
+              Vigilancia CTI no es solo un visor de alertas; es un motor de orquestación. 
+              Aquí describimos cómo los datos fluyen desde el origen hasta la resolución.
+            </p>
+
+            <div className="space-y-6">
+              <h3 className="text-lg font-bold text-emerald-400">Flujo de Ingesta y Enriquecimiento</h3>
+              <div className="relative pl-8 border-l border-zinc-800 space-y-8 not-prose">
+                {[
+                  { title: 'Recepción y Validación', desc: 'El API Gateway recibe el POST, valida la firma HMAC y el timestamp.' },
+                  { title: 'Encolado (Buffering)', desc: 'El mensaje se guarda en la cola persistente para asegurar entrega zero-loss.' },
+                  { title: 'Normalización (Worker)', desc: 'El worker extrae los campos y los mapea al esquema AlertEnvelope.' },
+                  { title: 'Enriquecimiento de Activos', desc: 'Se cruzan los observables (IPs, dominios) con la base de activos del cliente.' },
+                  { title: 'Notificación y Alerta', desc: 'Si la severidad es > High, se disparan notificaciones push/email.' }
+                ].map((step, i) => (
+                  <div key={i} className="relative">
+                    <div className="absolute -left-[41px] top-0 w-4 h-4 rounded-full bg-zinc-900 border-2 border-emerald-500" />
+                    <h4 className="text-sm font-bold text-white">{step.title}</h4>
+                    <p className="text-xs text-zinc-500 mt-1">{step.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
         {activeSection === 'auth' && (
-          <div className="space-y-6">
-            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Guía de Autenticación</h1>
-            <p className="text-zinc-400">
-              La plataforma soporta múltiples métodos de autenticación para los conectores, siendo HMAC el estándar para entornos de alta seguridad.
+          <div className="space-y-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Guía de Autenticación y Seguridad</h1>
+            <p className="text-zinc-400 leading-relaxed">
+              La seguridad es el cimiento de Vigilancia CTI. Implementamos mecanismos robustos para asegurar que solo fuentes legítimas puedan enviar inteligencia a la plataforma.
             </p>
-            <h3 className="text-lg font-bold text-emerald-400">Validación HMAC</h3>
-            <p className="text-zinc-400 text-sm">
-              La firma se calcula concatenando el timestamp, el nonce y el cuerpo de la petición, cifrando el resultado con la clave secreta del conector usando SHA256.
-            </p>
-            <div className="bg-zinc-900 p-4 rounded-lg border border-zinc-800 italic text-zinc-500 text-xs">
-              Nota: El sistema tolera una desviación de ±5 minutos en el timestamp para prevenir ataques de repetición.
-            </div>
-            <h3 className="text-lg font-bold text-emerald-400">Ejemplo de Firma (Node.js)</h3>
-            <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs">
-{`const crypto = require('crypto');
-const secret = 'your_connector_secret';
-const payload = JSON.stringify(data);
-const timestamp = Math.floor(Date.now() / 1000);
-const nonce = crypto.randomBytes(16).toString('hex');
 
-const signature = crypto.createHmac('sha256', secret)
-  .update(\`\${timestamp}\${nonce}\${payload}\`)
-  .digest('hex');`}
-            </pre>
+            <div className="space-y-6">
+              <h3 className="text-lg font-bold text-emerald-400">Validación HMAC (Hash-based Message Authentication Code)</h3>
+              <p className="text-sm text-zinc-400">
+                Es nuestro estándar de oro. A diferencia de las API Keys estáticas, HMAC protege contra la manipulación de datos y ataques de repetición.
+              </p>
+              
+              <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 space-y-4">
+                <h4 className="text-white text-sm font-bold">Componentes de la Firma</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-3 bg-zinc-950 rounded border border-zinc-800">
+                    <div className="text-[10px] font-mono text-emerald-500 mb-1">X-Timestamp</div>
+                    <p className="text-[9px] text-zinc-500">Tiempo Unix actual. Rechazamos peticiones con {'>'} 300s de desfase.</p>
+                  </div>
+                  <div className="p-3 bg-zinc-950 rounded border border-zinc-800">
+                    <div className="text-[10px] font-mono text-emerald-500 mb-1">X-Nonce</div>
+                    <p className="text-[9px] text-zinc-500">Cadena aleatoria única por petición para evitar replay attacks.</p>
+                  </div>
+                  <div className="p-3 bg-zinc-950 rounded border border-zinc-800">
+                    <div className="text-[10px] font-mono text-emerald-500 mb-1">Payload</div>
+                    <p className="text-[9px] text-zinc-500">El cuerpo JSON completo de la alerta.</p>
+                  </div>
+                </div>
+              </div>
+
+              <h3 className="text-lg font-bold text-emerald-400">Ejemplo de Implementación (Python)</h3>
+              <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs text-zinc-300">
+{`import hmac
+import hashlib
+import time
+import uuid
+import json
+
+def sign_request(secret_key, data):
+    timestamp = str(int(time.time()))
+    nonce = uuid.uuid4().hex
+    payload = json.dumps(data, separators=(',', ':'))
+    
+    # Concatenar: timestamp + nonce + payload
+    message = f"{timestamp}{nonce}{payload}"
+    
+    signature = hmac.new(
+        secret_key.encode(),
+        message.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    
+    return {
+        "Authorization": f"HMAC {signature}",
+        "X-Timestamp": timestamp,
+        "X-Nonce": nonce
+    }`}
+              </pre>
+            </div>
           </div>
         )}
 
         {activeSection === 'clients' && (
-          <div className="space-y-6">
-            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Arquitectura Multi-tenant</h1>
-            <p className="text-zinc-400">
-              A diferencia de otras plataformas, los conectores en Vigilancia CTI son globales. La separación de datos se realiza a nivel de evento mediante el campo <code className="text-emerald-400">client_id</code>.
+          <div className="space-y-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Arquitectura Multi-tenant y Activos</h1>
+            <p className="text-zinc-400 leading-relaxed">
+              Vigilancia CTI permite gestionar múltiples organizaciones desde una única instancia, manteniendo un aislamiento lógico estricto.
             </p>
-            <ul className="text-zinc-400 text-sm space-y-2">
-              <li><strong>Aislamiento Lógico:</strong> Las consultas siempre filtran por el ID del cliente asociado al usuario.</li>
-              <li><strong>Configuración Específica:</strong> Cada cliente puede tener sus propios activos técnicos (dominios, IPs, marcas) para el enriquecimiento de alertas.</li>
-            </ul>
-            <h3 className="text-lg font-bold text-emerald-400">Gestión de Activos</h3>
-            <p className="text-zinc-400 text-sm">
-              Los activos técnicos permiten al sistema correlacionar alertas genéricas con el contexto específico del cliente.
-            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 not-prose">
+              <div className="p-6 bg-zinc-900/30 border border-zinc-800 rounded-2xl">
+                <h4 className="text-white font-bold mb-2">Aislamiento por client_id</h4>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Cada evento debe incluir un ID de cliente válido. El sistema descarta automáticamente cualquier evento que no corresponda a un cliente activo o cuya clave de conector no tenga permisos sobre ese ID.
+                </p>
+              </div>
+              <div className="p-6 bg-zinc-900/30 border border-zinc-800 rounded-2xl">
+                <h4 className="text-white font-bold mb-2">Gestión de Activos Técnicos</h4>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Define qué IPs, dominios y marcas pertenecen a cada cliente. Esto permite al motor de normalización marcar alertas como "Contextualized" si los observables coinciden con activos conocidos.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-bold text-emerald-400">Tipos de Activos Soportados</h3>
+              <div className="flex flex-wrap gap-2 not-prose">
+                {['IPv4/v6 Range', 'FQDN', 'Email Domain', 'Brand Keyword', 'Social Handle', 'VIP User'].map(asset => (
+                  <span key={asset} className="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded-full text-[10px] text-zinc-400 font-mono">
+                    {asset}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
         {activeSection === 'queue' && (
-          <div className="space-y-6">
-            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Cola de Mensajes & Escalabilidad</h1>
-            <p className="text-zinc-400">
-              Para manejar volúmenes masivos de alertas (miles por segundo), la plataforma utiliza una arquitectura basada en colas.
+          <div className="space-y-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Cola de Mensajes y Escalabilidad</h1>
+            <p className="text-zinc-400 leading-relaxed">
+              Para garantizar que ninguna alerta se pierda durante picos de actividad (ej: ataques DDoS masivos), implementamos una capa de persistencia intermedia.
             </p>
-            <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-xl not-prose">
-              <h4 className="text-emerald-400 font-bold mb-4">Flujo de Ingestión Asíncrona</h4>
-              <div className="flex items-center gap-4 text-[10px] font-mono uppercase">
-                <div className="p-2 border border-zinc-700 rounded">API Endpoint</div>
-                <ChevronRight size={14} className="text-zinc-700" />
-                <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded">Message Queue</div>
-                <ChevronRight size={14} className="text-zinc-700" />
-                <div className="p-2 border border-zinc-700 rounded">Background Worker</div>
-                <ChevronRight size={14} className="text-zinc-700" />
-                <div className="p-2 border border-zinc-700 rounded">Database</div>
+
+            <div className="p-8 bg-zinc-900/50 border border-zinc-800 rounded-2xl not-prose">
+              <h4 className="text-emerald-400 font-bold mb-6 text-center">Arquitectura de Ingesta Asíncrona</h4>
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-16 h-16 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-400">
+                    <Globe size={24} />
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-500">External Sources</span>
+                </div>
+                <div className="h-px w-8 bg-zinc-800 hidden md:block" />
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-20 h-20 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                    <Cpu size={32} />
+                  </div>
+                  <span className="text-[10px] font-mono text-emerald-400">API Gateway</span>
+                </div>
+                <div className="h-px w-8 bg-zinc-800 hidden md:block" />
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-24 h-16 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 relative overflow-hidden">
+                    <div className="absolute inset-0 flex items-center justify-around opacity-20">
+                      {[1,2,3,4].map(i => <div key={i} className="w-1 h-8 bg-blue-400" />)}
+                    </div>
+                    <RefreshCw size={24} className="animate-spin-slow" />
+                  </div>
+                  <span className="text-[10px] font-mono text-blue-400">Message Queue</span>
+                </div>
+                <div className="h-px w-8 bg-zinc-800 hidden md:block" />
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-20 h-20 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-400">
+                    <Shield size={32} />
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-500">Workers</span>
+                </div>
               </div>
             </div>
-            <h3 className="text-lg font-bold text-emerald-400">Beneficios</h3>
-            <ul className="text-zinc-400 text-sm">
-              <li><strong>Baja Latencia:</strong> El endpoint responde <code className="text-blue-400">202 Accepted</code> en milisegundos.</li>
-              <li><strong>Resiliencia:</strong> Si la base de datos está ocupada, los mensajes permanecen en la cola.</li>
-              <li><strong>Reintentos:</strong> Los fallos temporales se reintentan automáticamente.</li>
-            </ul>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                { title: 'Backpressure', desc: 'Si los workers están saturados, la cola actúa como un buffer, evitando el rechazo de peticiones.' },
+                { title: 'Dead Letter Queue', desc: 'Los mensajes que fallan la normalización se mueven a una cola especial para auditoría manual.' },
+                { title: 'Horizontal Scaling', desc: 'Podemos levantar N instancias de workers para procesar la cola en paralelo según la carga.' }
+              ].map((item, i) => (
+                <div key={i} className="p-4 bg-zinc-900/30 border border-zinc-800 rounded-xl">
+                  <h4 className="text-xs font-bold text-white mb-2">{item.title}</h4>
+                  <p className="text-[10px] text-zinc-500 leading-relaxed">{item.desc}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {activeSection === 'secrets' && (
-          <div className="space-y-6">
-            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Gestión Segura de Secretos</h1>
-            <p className="text-zinc-400">
-              Vigilancia CTI nunca almacena claves privadas o secretos en texto plano dentro de la base de datos principal.
+          <div className="space-y-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Gestión de Secretos y Seguridad de Claves</h1>
+            <p className="text-zinc-400 leading-relaxed">
+              En Vigilancia CTI, seguimos el principio de "Never Store Secrets". Las claves de API y secretos de HMAC nunca tocan nuestra base de datos principal en texto claro.
             </p>
-            <h3 className="text-lg font-bold text-emerald-400">Integración con Secrets Manager</h3>
-            <p className="text-zinc-400 text-sm">
-              El campo <code className="text-emerald-400">secrets_ref</code> actúa como un puntero hacia un gestor de secretos externo (HashiCorp Vault, AWS Secrets Manager o Azure Key Vault).
-            </p>
-            <div className="bg-zinc-950 p-6 rounded-xl border border-zinc-800">
-              <h4 className="text-white text-sm font-bold mb-4">Ejemplo de Configuración</h4>
-              <div className="space-y-2">
-                <p className="text-xs text-zinc-500 font-mono">connector_id: "sentinel-01"</p>
-                <p className="text-xs text-zinc-500 font-mono">auth_method: "hmac"</p>
-                <p className="text-xs text-emerald-400 font-mono">secrets_ref: "vault/prod/sentinel-hmac-key"</p>
+
+            <div className="space-y-6">
+              <h3 className="text-lg font-bold text-emerald-400">El concepto de Secrets Reference</h3>
+              <p className="text-sm text-zinc-400">
+                En lugar de guardar una clave, guardamos un puntero. Cuando el sistema necesita validar una firma, solicita el secreto en tiempo real a un gestor externo seguro.
+              </p>
+
+              <div className="bg-zinc-950 p-6 rounded-2xl border border-zinc-800 space-y-4">
+                <h4 className="text-white text-sm font-bold">Flujo de Resolución de Secretos</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3 text-xs">
+                    <div className="w-6 h-6 rounded bg-zinc-900 flex items-center justify-center text-zinc-500">1</div>
+                    <p className="text-zinc-400">Petición llega con <code className="text-emerald-500">connector_id: "conn_123"</code></p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <div className="w-6 h-6 rounded bg-zinc-900 flex items-center justify-center text-zinc-500">2</div>
+                    <p className="text-zinc-400">App busca en DB y encuentra <code className="text-blue-500">secrets_ref: "vault/prod/key_123"</code></p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <div className="w-6 h-6 rounded bg-zinc-900 flex items-center justify-center text-zinc-500">3</div>
+                    <p className="text-zinc-400">App consulta al <strong>Secrets Manager</strong> (Vault/AWS) usando el ref.</p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <div className="w-6 h-6 rounded bg-zinc-900 flex items-center justify-center text-zinc-500">4</div>
+                    <p className="text-zinc-400">Secreto se usa en memoria para el cálculo HMAC y se descarta inmediatamente.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+                <h4 className="text-emerald-400 text-xs font-bold mb-2 flex items-center gap-2">
+                  <Shield size={14} />
+                  Ventajas de Seguridad
+                </h4>
+                <ul className="text-[10px] text-zinc-500 space-y-1 list-disc ml-4">
+                  <li>Inmune a volcados de base de datos (SQL Injection).</li>
+                  <li>Facilita la rotación de claves sin cambiar la configuración de la app.</li>
+                  <li>Auditoría centralizada de acceso a secretos en el gestor externo.</li>
+                </ul>
               </div>
             </div>
-            <p className="text-zinc-500 text-xs italic">
-              Durante el tiempo de ejecución, el sistema resuelve la referencia y utiliza el secreto en memoria para validar las firmas entrantes.
+          </div>
+        )}
+
+        {activeSection === 'best_practices' && (
+          <div className="space-y-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Mejores Prácticas de Integración</h1>
+            <p className="text-zinc-400 leading-relaxed">
+              Para obtener el máximo rendimiento y seguridad de Vigilancia CTI, recomendamos seguir estas directrices al integrar nuevos sistemas.
             </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 not-prose">
+              <div className="p-6 bg-zinc-900/30 border border-zinc-800 rounded-2xl">
+                <h4 className="text-white font-bold mb-2">Granularidad de Alertas</h4>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Evita enviar logs de auditoría genéricos. Filtra en el origen para enviar solo eventos que representen una amenaza potencial o una anomalía confirmada.
+                </p>
+              </div>
+              <div className="p-6 bg-zinc-900/30 border border-zinc-800 rounded-2xl">
+                <h4 className="text-white font-bold mb-2">Uso de Observables</h4>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Cuantos más observables (IPs, Hashes, Dominios) incluyas en el array <code className="text-emerald-500">observables</code>, mejor será el enriquecimiento automático.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-lg font-bold text-emerald-400">Recomendaciones de Seguridad</h3>
+              <ul className="text-sm text-zinc-400 space-y-2">
+                <li><strong>Rotación de Secretos:</strong> Rota tus claves HMAC cada 90 días utilizando el Secrets Manager.</li>
+                <li><strong>Principio de Privilegio Mínimo:</strong> Crea conectores específicos para cada vendor en lugar de uno genérico para todo.</li>
+                <li><strong>Monitoreo de Salud:</strong> Revisa periódicamente la pestaña "Health" de tus conectores para detectar errores de firma o desincronización de tiempo.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {activeSection === 'troubleshooting' && (
+          <div className="space-y-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white m-0">Solución de Problemas Comunes</h1>
+            <p className="text-zinc-400 leading-relaxed">
+              Si experimentas problemas con la ingesta o visualización de alertas, consulta esta guía rápida.
+            </p>
+
+            <div className="space-y-4">
+              {[
+                { q: '¿Por qué mis alertas no aparecen en el dashboard?', a: 'Verifica que el client_id en el payload sea válido y que el conector esté en estado "online". Revisa los logs del conector para errores de validación.' },
+                { q: 'Error: "Invalid HMAC Signature"', a: 'Asegúrate de que el secreto en el Secrets Manager coincida con el usado para firmar. Verifica que el payload no se esté modificando (espacios, saltos de línea) después de firmar.' },
+                { q: 'Error: "Timestamp out of bounds"', a: 'El servidor rechaza peticiones con más de 5 minutos de diferencia. Sincroniza el reloj del sistema emisor mediante NTP.' },
+                { q: 'Las alertas aparecen pero sin contexto de cliente', a: 'Verifica que los activos técnicos (IPs, Dominios) estén correctamente definidos en la sección de Clientes para ese client_id.' }
+              ].map((item, i) => (
+                <div key={i} className="p-4 bg-zinc-900/30 border border-zinc-800 rounded-xl">
+                  <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                    <HelpCircle size={14} className="text-emerald-500" />
+                    {item.q}
+                  </h4>
+                  <p className="text-xs text-zinc-500 leading-relaxed">{item.a}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -1712,6 +2039,24 @@ const signature = crypto.createHmac('sha256', secret)
               <ApiEndpoint method="GET" path="/v1/export/:id/delta" desc="Exporta deltas de alertas para integración externa." />
               <ApiEndpoint method="GET" path="/api/me" desc="Obtiene información del usuario actual." />
             </div>
+
+            <h3 className="text-lg font-bold text-white mt-8">Esquema AlertEnvelope</h3>
+            <p className="text-xs text-zinc-500 mb-4">Todas las alertas enviadas a <code className="text-emerald-500">/v1/ingest/:id/alerts</code> deben seguir este formato JSON.</p>
+            <pre className="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-[10px] text-zinc-400">
+{`{
+  "event_id": "string (uuid)",      // Identificador único del evento en el origen
+  "event_time": "string (iso8601)", // Fecha y hora de la detección
+  "client_id": "number",            // ID del cliente en Vigilancia CTI
+  "category": "string",             // Categoría (Malware, Phishing, etc.)
+  "severity": "string",             // high, medium, low, info
+  "title": "string",                // Título descriptivo de la alerta
+  "description": "string",          // Detalles adicionales
+  "observables": [                  // Array de indicadores técnicos
+    { "type": "ip|domain|hash|url", "value": "string" }
+  ],
+  "raw": "object"                   // Log original completo (opcional)
+}`}
+            </pre>
 
             <h3 className="text-lg font-bold text-white mt-8">Códigos de Estado</h3>
             <table className="w-full text-xs text-zinc-400 border-collapse">
@@ -1763,12 +2108,22 @@ function ConnectorDetailView({ connectorId, onBack, t }: { connectorId: string, 
   const [activeTab, setActiveTab] = useState<'summary' | 'config' | 'runs' | 'logs' | 'health'>('summary');
   const [loading, setLoading] = useState(true);
   const [isTesting, setIsTesting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [editableConfig, setEditableConfig] = useState('');
+  const [editableSchema, setEditableSchema] = useState('');
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [connectorId]);
+
+  useEffect(() => {
+    if (connector) {
+      setEditableConfig(JSON.stringify(connector.config, null, 2));
+      setEditableSchema(JSON.stringify(connector.config_schema, null, 2));
+    }
+  }, [connector]);
 
   const fetchData = async () => {
     try {
@@ -1798,6 +2153,30 @@ function ConnectorDetailView({ connectorId, onBack, t }: { connectorId: string, 
       console.error(e);
     }
     setIsTesting(false);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch(`/v1/connectors/${connectorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          config: JSON.parse(editableConfig),
+          config_schema: JSON.parse(editableSchema)
+        })
+      });
+      if (res.ok) {
+        alert('Configuración guardada con éxito');
+        fetchData();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Error al guardar la configuración');
+      }
+    } catch (e) {
+      alert('Error: JSON inválido o problema de red');
+    }
+    setIsSaving(false);
   };
 
   if (loading || !connector) return <div className="p-8 text-zinc-500 font-mono">LOADING_CONNECTOR_DETAILS...</div>;
@@ -1833,9 +2212,13 @@ function ConnectorDetailView({ connectorId, onBack, t }: { connectorId: string, 
             <Play size={14} className={isTesting ? "animate-pulse" : ""} />
             {isTesting ? 'TESTING...' : t('test_connector')}
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-black rounded-lg text-xs font-bold hover:bg-emerald-600 transition-colors">
-            <RefreshCw size={14} />
-            {t('save_changes')}
+          <button 
+            onClick={handleSave}
+            disabled={isSaving}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-black rounded-lg text-xs font-bold hover:bg-emerald-600 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={isSaving ? "animate-spin" : ""} />
+            {isSaving ? 'SAVING...' : t('save_changes')}
           </button>
         </div>
       </div>
@@ -1930,8 +2313,8 @@ function ConnectorDetailView({ connectorId, onBack, t }: { connectorId: string, 
                   <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">JSON Configuration</label>
                   <textarea 
                     className="w-full h-64 bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-xs font-mono text-emerald-500 focus:outline-none focus:border-emerald-500/50"
-                    value={JSON.stringify(connector.config, null, 2)}
-                    readOnly
+                    value={editableConfig}
+                    onChange={(e) => setEditableConfig(e.target.value)}
                   />
                 </div>
               </div>
@@ -1947,8 +2330,8 @@ function ConnectorDetailView({ connectorId, onBack, t }: { connectorId: string, 
                   <label className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">JSON Schema</label>
                   <textarea 
                     className="w-full h-64 bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-xs font-mono text-zinc-400 focus:outline-none focus:border-emerald-500/50"
-                    value={JSON.stringify(connector.config_schema, null, 2)}
-                    readOnly
+                    value={editableSchema}
+                    onChange={(e) => setEditableSchema(e.target.value)}
                   />
                 </div>
               </div>
@@ -2018,6 +2401,48 @@ function ConnectorDetailView({ connectorId, onBack, t }: { connectorId: string, 
               {logs.length === 0 && (
                 <div className="text-center py-10 text-zinc-700 italic">No hay logs disponibles.</div>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'health' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 space-y-6">
+              <h3 className="text-xs font-mono text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                <Activity size={14} />
+                Health Checks
+              </h3>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center p-3 bg-zinc-900/50 rounded-lg border border-zinc-800">
+                  <span className="text-xs text-zinc-400">Ingestion Endpoint</span>
+                  <span className="text-[10px] font-bold text-emerald-500 uppercase">Reachable</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-zinc-900/50 rounded-lg border border-zinc-800">
+                  <span className="text-xs text-zinc-400">HMAC Validation</span>
+                  <span className="text-[10px] font-bold text-emerald-500 uppercase">Active</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-zinc-900/50 rounded-lg border border-zinc-800">
+                  <span className="text-xs text-zinc-400">Secrets Resolution</span>
+                  <span className={cn(
+                    "text-[10px] font-bold uppercase",
+                    connector.secrets_ref ? "text-emerald-500" : "text-yellow-500"
+                  )}>
+                    {connector.secrets_ref ? "Configured" : "Not Set"}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 space-y-6">
+              <h3 className="text-xs font-mono text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                <Shield size={14} />
+                Security Status
+              </h3>
+              <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
+                <p className="text-[10px] text-emerald-400 font-bold mb-1">HMAC Enforcement</p>
+                <p className="text-[10px] text-zinc-500 leading-relaxed">
+                  Este conector requiere firmas HMAC válidas para todas las peticiones entrantes. Las peticiones sin firma o con firma inválida son rechazadas con 401 Unauthorized.
+                </p>
+              </div>
             </div>
           </div>
         )}
