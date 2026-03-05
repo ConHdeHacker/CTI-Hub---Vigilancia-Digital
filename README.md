@@ -1,8 +1,51 @@
-# Vigilancia CTI - Guía de Actualización
+# Vigilancia CTI - Guía de Gestión
 
-Este documento describe el proceso para actualizar la plataforma Vigilancia CTI a la última versión disponible en el repositorio de GitHub.
+Este documento describe los procesos para instalar y actualizar la plataforma Vigilancia CTI.
 
-## Proceso de Actualización por Consola
+---
+
+## 🚀 Instalación
+
+Para una instalación rápida y automática, puede utilizar el script de instalación incluido.
+
+### Proceso Automático (Recomendado)
+
+1. Otorgue permisos de ejecución al script:
+   ```bash
+   chmod +x install.sh
+   ```
+2. Ejecute el script:
+   ```bash
+   ./install.sh
+   ```
+   *El script le preguntará por el **puerto de exposición** deseado. Por defecto es el 3000.*
+
+### Proceso Manual
+
+Si prefiere realizar la instalación paso a paso:
+
+1. **Instalar Dependencias**:
+   ```bash
+   npm install
+   ```
+2. **Configurar Puerto**:
+   Cree un archivo `.env` en la raíz del proyecto y defina la variable `PORT`:
+   ```env
+   PORT=3000
+   APP_MODE=production
+   ```
+3. **Compilar**:
+   ```bash
+   npm run build
+   ```
+4. **Iniciar**:
+   ```bash
+   npm start
+   ```
+
+---
+
+## 🔄 Actualización
 
 Para garantizar la integridad de los datos y la correcta aplicación de los cambios, siga estos pasos desde la consola de comandos en el directorio raíz de la aplicación:
 
@@ -38,9 +81,12 @@ Reinicie el servidor para aplicar los cambios:
 pm2 restart surveillance-app
 
 # O simplemente reinicie el proceso de node/tsx
-npm run dev
+npm start
 ```
 
-## Notas Importantes
+---
+
+## 📝 Notas Importantes
 - **Persistencia**: La información almacenada en `surveillance.db` no se verá alterada por el proceso de `git pull`, ya que el archivo de base de datos está excluido del control de versiones.
 - **Rollback**: Si necesita volver a la versión anterior, puede restaurar el backup de la base de datos y usar `git checkout` para volver a un commit o tag anterior.
+- **Configuración de Puerto**: El puerto se configura mediante la variable de entorno `PORT` en el archivo `.env`.
