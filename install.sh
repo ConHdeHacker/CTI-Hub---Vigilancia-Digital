@@ -35,12 +35,7 @@ echo "Archivo de configuración .env generado (sin secretos)."
 echo "Instalando dependencias de npm..."
 npm install
 
-# 5. Configurar Super Admin (Seguro, directo a DB)
-echo ""
-echo "Iniciando configuración de seguridad..."
-npx tsx scripts/create-admin.ts
-
-# 6. Compilar la aplicación
+# 5. Compilar la aplicación
 echo "Compilando la aplicación (Vite build)..."
 npm run build
 

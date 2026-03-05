@@ -18,7 +18,7 @@ Para una instalación rápida y automática, puede utilizar el script de instala
    ```bash
    ./install.sh
    ```
-   *El script le guiará para configurar el **puerto de red** y las **credenciales del Super Admin** (usuario, email y contraseña).*
+   *El script le guiará para configurar el **puerto de red**.*
 
 3. Una vez finalizado, inicie la aplicación:
    ```bash
@@ -40,12 +40,15 @@ Si prefiere realizar la instalación paso a paso:
    PORT=3000
    APP_MODE=production
    ```
-3. **Crear Super Admin**:
-   Ejecute el script de configuración de usuario:
+3. **Iniciar la aplicación**:
    ```bash
-   npx tsx scripts/create-admin.ts
+   npm start
    ```
-   *Este script le pedirá las credenciales y las insertará directamente en la base de datos de forma segura.*
+   *La primera vez que acceda, utilice las credenciales por defecto:*
+   - **Usuario**: `admin`
+   - **Contraseña**: `admin123`
+   
+   *El sistema le solicitará obligatoriamente cambiar la contraseña tras el primer inicio de sesión.*
 3. **Compilar**:
    ```bash
    npm run build

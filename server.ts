@@ -320,7 +320,16 @@ db.exec(`
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
   
   if (userCount.count === 0) {
-    console.log("[SYSTEM] Base de datos vacía. Por favor, ejecute el script de instalación para crear el Super Admin.");
+    console.log("[SYSTEM] Base de datos vacía. Creando usuario administrador por defecto...");
+    
+    const adminUser = "admin";
+    const adminPass = "admin123";
+    const adminEmail = "admin@cti-platform.com";
+
+    const insertUser = db.prepare("INSERT INTO users (username, email, password, role, client_id, is_temp_password) VALUES (?, ?, ?, ?, ?, ?)");
+    insertUser.run(adminUser, adminEmail, adminPass, "super_admin", null, 1);
+    console.log(`[SYSTEM] Usuario Super Admin '${adminUser}' creado con contraseña temporal.`);
+    console.log("[SYSTEM] Por favor, cambie la contraseña tras el primer inicio de sesión.");
   }
 
   const providerCount = db.prepare("SELECT COUNT(*) as count FROM provider_configs").get() as { count: number };
