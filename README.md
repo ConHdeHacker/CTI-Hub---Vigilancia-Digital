@@ -39,10 +39,13 @@ Si prefiere realizar la instalación paso a paso:
    ```env
    PORT=3000
    APP_MODE=production
-   ADMIN_USER=admin
-   ADMIN_EMAIL=admin@cti-platform.com
-   ADMIN_PASS=SuContraseñaSegura
    ```
+3. **Crear Super Admin**:
+   Ejecute el script de configuración de usuario:
+   ```bash
+   npx tsx scripts/create-admin.ts
+   ```
+   *Este script le pedirá las credenciales y las insertará directamente en la base de datos de forma segura.*
 3. **Compilar**:
    ```bash
    npm run build

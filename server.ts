@@ -320,53 +320,7 @@ db.exec(`
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
   
   if (userCount.count === 0) {
-    console.log("[SYSTEM] Base de datos vacía. Iniciando seeding...");
-    
-    // 1. Siempre crear el Super Admin inicial
-    const adminUser = process.env.ADMIN_USER || "admin";
-    const adminPass = process.env.ADMIN_PASS || "admin123";
-    const adminEmail = process.env.ADMIN_EMAIL || "admin@cti-platform.com";
-
-    const insertUser = db.prepare("INSERT INTO users (username, email, password, role, client_id) VALUES (?, ?, ?, ?, ?)");
-    insertUser.run(adminUser, adminEmail, adminPass, "super_admin", null);
-    console.log(`[SYSTEM] Usuario Super Admin '${adminUser}' creado.`);
-
-    // 2. Datos de prueba solo en modo development
-    if (APP_MODE === 'development') {
-      console.log("[SYSTEM] Generando datos de prueba (PREPRODUCCIÓN)...");
-      
-      const insertClient = db.prepare("INSERT INTO clients (name) VALUES (?)");
-      const acmeId = insertClient.run("Acme Corp").lastInsertRowid;
-      const globexId = insertClient.run("Globex").lastInsertRowid;
-
-      insertUser.run("analyst", "analyst@cti-platform.com", "analyst123", "analyst", null);
-      insertUser.run("acme_user", "contact@acme.com", "acme123", "client", acmeId);
-      insertUser.run("globex_user", "contact@globex.com", "globex123", "client", globexId);
-
-      const insertAlert = db.prepare("INSERT INTO alerts (client_id, client_alert_id, category, title, description, severity) VALUES (?, ?, ?, ?, ?, ?)");
-      
-      const categories = [
-        "Exposicion de informacion",
-        "Fugas de credenciales",
-        "Exposicion de sistemas y vulnerabilidades",
-        "Monitorizacion de dominios",
-        "Monitorizacion Web / Defacement",
-        "Listas de categorizacion",
-        "Contenidos ofensivos",
-        "Abuso y suplantacion de marca",
-        "Fraude de aplicaciones",
-        "Exposicion Bancaria y carding"
-      ];
-
-      categories.forEach((cat, index) => {
-        insertAlert.run(acmeId, index + 1, cat, `Incidente de ${cat} detectado`, `Descripción detallada para la categoría ${cat} en Acme Corp.`, index % 4 === 0 ? 'critical' : index % 3 === 0 ? 'high' : 'medium');
-        insertAlert.run(globexId, index + 1, cat, `Alerta de ${cat} en Globex`, `Análisis técnico de la amenaza de ${cat} para Globex.`, index % 2 === 0 ? 'high' : 'low');
-      });
-      
-      console.log("[SYSTEM] Datos de prueba generados correctamente.");
-    } else {
-      console.log("[SYSTEM] Modo PRODUCCIÓN: No se han generado datos de prueba.");
-    }
+    console.log("[SYSTEM] Base de datos vacía. Por favor, ejecute el script de instalación para crear el Super Admin.");
   }
 
   const providerCount = db.prepare("SELECT COUNT(*) as count FROM provider_configs").get() as { count: number };
