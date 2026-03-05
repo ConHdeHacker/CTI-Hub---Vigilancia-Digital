@@ -323,9 +323,13 @@ db.exec(`
     console.log("[SYSTEM] Base de datos vacía. Iniciando seeding...");
     
     // 1. Siempre crear el Super Admin inicial
+    const adminUser = process.env.ADMIN_USER || "admin";
+    const adminPass = process.env.ADMIN_PASS || "admin123";
+    const adminEmail = process.env.ADMIN_EMAIL || "admin@cti-platform.com";
+
     const insertUser = db.prepare("INSERT INTO users (username, email, password, role, client_id) VALUES (?, ?, ?, ?, ?)");
-    insertUser.run("admin", "admin@cti-platform.com", "admin123", "super_admin", null);
-    console.log("[SYSTEM] Usuario 'admin' (super_admin) creado.");
+    insertUser.run(adminUser, adminEmail, adminPass, "super_admin", null);
+    console.log(`[SYSTEM] Usuario Super Admin '${adminUser}' creado.`);
 
     // 2. Datos de prueba solo en modo development
     if (APP_MODE === 'development') {
@@ -694,13 +698,18 @@ async function startServer() {
    * Se utiliza el header 'x-user' para identificar al usuario en esta demo.
    */
   app.get("/api/me", (req, res) => {
-    const username = req.headers["x-user"] || "admin";
+    const username = req.headers["x-user"];
+    if (!username) {
+      return res.status(401).json({ error: "No autenticado" });
+    }
     const user = db.prepare("SELECT users.*, clients.name as client_name FROM users LEFT JOIN clients ON users.client_id = clients.id WHERE username = ?").get(username) as any;
     if (user) {
       // Registrar acceso en logs de auditoría
       db.prepare("INSERT INTO access_logs (user_id, action, ip) VALUES (?, ?, ?)").run(user.id, 'API_ACCESS', req.ip);
+      res.json({ ...user, system_mode: APP_MODE });
+    } else {
+      res.status(401).json({ error: "Usuario no encontrado" });
     }
-    res.json({ ...user, system_mode: APP_MODE });
   });
 
   /**

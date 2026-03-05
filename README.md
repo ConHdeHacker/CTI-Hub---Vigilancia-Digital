@@ -18,7 +18,13 @@ Para una instalación rápida y automática, puede utilizar el script de instala
    ```bash
    ./install.sh
    ```
-   *El script le preguntará por el **puerto de exposición** deseado. Por defecto es el 3000.*
+   *El script le guiará para configurar el **puerto de red** y las **credenciales del Super Admin** (usuario, email y contraseña).*
+
+3. Una vez finalizado, inicie la aplicación:
+   ```bash
+   npm start
+   ```
+   *La primera pantalla que verá al acceder será el **Login**, donde deberá introducir las credenciales creadas en el paso anterior.*
 
 ### Proceso Manual
 
@@ -28,11 +34,14 @@ Si prefiere realizar la instalación paso a paso:
    ```bash
    npm install
    ```
-2. **Configurar Puerto**:
-   Cree un archivo `.env` en la raíz del proyecto y defina la variable `PORT`:
+2. **Configurar Entorno**:
+   Cree un archivo `.env` en la raíz del proyecto y defina las variables necesarias:
    ```env
    PORT=3000
    APP_MODE=production
+   ADMIN_USER=admin
+   ADMIN_EMAIL=admin@cti-platform.com
+   ADMIN_PASS=SuContraseñaSegura
    ```
 3. **Compilar**:
    ```bash
