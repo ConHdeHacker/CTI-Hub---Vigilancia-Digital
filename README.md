@@ -60,6 +60,66 @@ Si prefiere realizar la instalación paso a paso:
 
 ---
 
+## 🛡️ Despliegue y Persistencia
+
+Para garantizar que el servidor se mantenga activo y se inicie automáticamente con el sistema, se recomienda utilizar **PM2** o **Systemd**.
+
+### Opción A: Usando PM2 (Recomendado)
+
+PM2 es un gestor de procesos para Node.js que permite mantener la app viva permanentemente.
+
+1. **Instalar PM2 globalmente**:
+   ```bash
+   npm install -g pm2
+   ```
+
+2. **Iniciar la aplicación con la configuración incluida**:
+   ```bash
+   pm2 start ecosystem.config.cjs
+   ```
+
+3. **Configurar inicio automático al arrancar el servidor**:
+   ```bash
+   pm2 startup
+   # Siga las instrucciones que aparecerán en la terminal
+   pm2 save
+   ```
+
+### Opción B: Usando Systemd (Linux Nativo)
+
+Si prefiere no instalar herramientas adicionales, puede crear un servicio de sistema.
+
+1. **Crear el archivo de servicio**:
+   ```bash
+   sudo nano /etc/systemd/system/vigilancia-cti.service
+   ```
+
+2. **Pegar el siguiente contenido** (ajustando las rutas):
+   ```ini
+   [Unit]
+   Description=Vigilancia CTI Platform
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=tu_usuario
+   WorkingDirectory=/ruta/a/la/app
+   ExecStart=/usr/bin/npm start
+   Restart=always
+   Environment=NODE_ENV=production
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+3. **Habilitar e iniciar el servicio**:
+   ```bash
+   sudo systemctl enable vigilancia-cti
+   sudo systemctl start vigilancia-cti
+   ```
+
+---
+
 ## 🔄 Actualización
 
 Para garantizar la integridad de los datos y la correcta aplicación de los cambios, siga estos pasos desde la consola de comandos en el directorio raíz de la aplicación:
