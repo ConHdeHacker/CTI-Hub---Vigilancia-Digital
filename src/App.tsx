@@ -10,6 +10,7 @@ import {
   Search, 
   Filter,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   MessageSquare,
   Clock,
@@ -24,6 +25,7 @@ import {
   Cpu,
   Bell,
   X,
+  Trash2,
   Calendar,
   Layout,
   CheckCircle2,
@@ -34,6 +36,10 @@ import {
   History,
   List,
   FileText,
+  FileEdit,
+  FileX,
+  File,
+  Upload,
   Play,
   RefreshCw,
   ExternalLink,
@@ -41,12 +47,16 @@ import {
   HelpCircle,
   ArrowUpRight,
   ArrowDownRight,
+  Ban,
+  ShieldAlert,
+  Zap,
+  Target,
   Activity as ActivityIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
-import { User, Client, Alert, Comment, ClientModule } from './types';
-import { CATEGORIES, STATUS_LABELS, SEVERITY_COLORS, STATUS_COLORS } from './constants';
+import { User, Client, Alert, Comment, ClientModule, Takedown, Report, Sector } from './types';
+import { CATEGORIES, STATUS_LABELS, SEVERITY_COLORS, STATUS_COLORS, TAKEDOWN_SCENARIOS, TAKEDOWN_STATUS_LABELS, TAKEDOWN_STATUS_COLORS, PUBLIC_REPORT_CATEGORIES, PRIVATE_REPORT_SUBTYPES } from './constants';
 import { translations, Language } from './translations';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -70,7 +80,7 @@ export default function App() {
 
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [view, setView] = useState<'dashboard' | 'alerts' | 'clients' | 'alert_detail' | 'client_config' | 'connectors' | 'connector_detail' | 'users' | 'system_config' | 'profile' | 'documentation'>('dashboard'); // Vista actual
+  const [view, setView] = useState<'dashboard' | 'alerts' | 'takedowns' | 'reports' | 'clients' | 'alert_detail' | 'client_config' | 'connectors' | 'connector_detail' | 'users' | 'system_config' | 'profile' | 'documentation'>('dashboard'); // Vista actual
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null); // Cliente seleccionado para configuración
   const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null); // Conector seleccionado para detalle
   const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null); // Alerta seleccionada para detalle
@@ -84,7 +94,9 @@ export default function App() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
-  const [dashboardConfig, setDashboardConfig] = useState<{ widgets: string[] }>({ widgets: ['summary', 'trends', 'recent_alerts'] });
+  const [dashboardConfig, setDashboardConfig] = useState<{ widgets: string[] }>({ 
+    widgets: ['summary', 'trends', 'recent_alerts', 'severity_dist', 'threat_level', 'top_assets', 'takedowns_summary', 'connectors_status'] 
+  });
   const [searchParams, setSearchParams] = useState({
     q: '',
     client_id: '',
@@ -262,6 +274,51 @@ export default function App() {
     setView('alert_detail');
   };
 
+  /**
+   * Inicia el proceso de takedown para una alerta específica
+   */
+  const handleRequestTakedown = async (alertItem: Alert) => {
+    const scenarioMap: Record<string, string> = {
+      'Dominios': 'domain',
+      'Web': 'phishing',
+      'Marca': 'brand_abuse',
+      'Credenciales': 'phishing',
+      'Bancaria': 'fraud'
+    };
+
+    const scenario = scenarioMap[alertItem.category] || 'other';
+    
+    try {
+      const res = await fetch('/api/takedowns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          alert_id: alertItem.id,
+          client_id: alertItem.client_id,
+          title: `Takedown: ${alertItem.title}`,
+          description: `Iniciado desde alerta #${alertItem.id}. Detalle: ${alertItem.description}`,
+          target_url: alertItem.source || 'N/A',
+          scenario: scenario,
+          priority: alertItem.severity
+        })
+      });
+
+      if (res.ok) {
+        setView('takedowns');
+      } else {
+        const err = await res.json();
+        console.error(err.error || "Error al iniciar takedown");
+      }
+    } catch (e) {
+      console.error("Error de red al iniciar takedown", e);
+    }
+  };
+
+  // Exponer a window para acceso desde componentes hijos si es necesario
+  useEffect(() => {
+    (window as any).requestTakedown = handleRequestTakedown;
+  }, [user]);
+
   const getCategoryIcon = (category: string) => {
     if (category.includes('credenciales')) return <Lock size={16} />;
     if (category.includes('dominios')) return <Globe size={16} />;
@@ -353,6 +410,20 @@ export default function App() {
             </AnimatePresence>
           </div>
 
+          <SidebarItem 
+            icon={<Ban size={18} />} 
+            label="Takedowns" 
+            active={view === 'takedowns'} 
+            onClick={() => setView('takedowns')} 
+          />
+
+          <SidebarItem 
+            icon={<FileText size={18} />} 
+            label="Gestión Documental" 
+            active={view === 'reports'} 
+            onClick={() => setView('reports')} 
+          />
+
           {user?.role === 'super_admin' && (
             <>
               <SidebarItem 
@@ -382,7 +453,7 @@ export default function App() {
             </>
           )}
 
-          {(user?.role === 'super_admin' || user?.role === 'analyst') && (
+          {(user?.role === 'super_admin' || user?.role === 'admin') && (
             <SidebarItem 
               icon={<FileText size={18} />} 
               label={t('documentation')} 
@@ -423,6 +494,8 @@ export default function App() {
             <h2 className="text-sm font-mono text-zinc-400 uppercase tracking-widest">
               {view === 'dashboard' && t('system_overview')}
               {view === 'alerts' && t('alert_management')}
+              {view === 'takedowns' && 'Gestión de Takedowns'}
+              {view === 'reports' && 'Gestión Documental'}
               {view === 'clients' && t('client_directory')}
               {view === 'alert_detail' && `Alert #${selectedAlertId}`}
               {view === 'system_config' && t('system_config')}
@@ -719,6 +792,28 @@ export default function App() {
               </motion.div>
             )}
 
+            {view === 'takedowns' && (
+              <motion.div
+                key="takedowns"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <TakedownsView user={user!} t={t} />
+              </motion.div>
+            )}
+
+            {view === 'reports' && (
+              <motion.div
+                key="reports"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <DocumentManagementView user={user!} clients={clients} />
+              </motion.div>
+            )}
+
             {view === 'connectors' && (
               <motion.div
                 key="connectors"
@@ -879,7 +974,11 @@ function Dashboard({ stats, config, onUpdateConfig, user, t }: { stats: { alerts
     { id: 'summary', label: t('summary_states'), icon: <Layout size={14} /> },
     { id: 'trends', label: t('category_trends'), icon: <Activity size={14} /> },
     { id: 'recent_alerts', label: t('recent_alerts'), icon: <Clock size={14} /> },
-    { id: 'severity_dist', label: t('severity_dist'), icon: <AlertTriangle size={14} /> }
+    { id: 'severity_dist', label: t('severity_dist'), icon: <AlertTriangle size={14} /> },
+    { id: 'threat_level', label: 'Nivel de Amenaza', icon: <Zap size={14} /> },
+    { id: 'top_assets', label: 'Activos más Atacados', icon: <Target size={14} /> },
+    { id: 'takedowns_summary', label: 'Resumen Takedowns', icon: <Ban size={14} /> },
+    { id: 'connectors_status', label: 'Estado de Conectores', icon: <Cpu size={14} /> }
   ];
 
   return (
@@ -938,7 +1037,148 @@ function Dashboard({ stats, config, onUpdateConfig, user, t }: { stats: { alerts
         <StatCard label={t('resolved')} value={resolvedAlerts} icon={<Shield className="text-emerald-400" />} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {config.widgets.includes('threat_level') && (
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 flex flex-col items-center justify-center text-center">
+            <h3 className="text-xs font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2 self-start">
+              <Zap size={14} />
+              Nivel de Amenaza Global
+            </h3>
+            <div className="relative w-48 h-48">
+              <svg className="w-full h-full transform -rotate-90">
+                <circle
+                  cx="96"
+                  cy="96"
+                  r="80"
+                  stroke="currentColor"
+                  strokeWidth="12"
+                  fill="transparent"
+                  className="text-zinc-800"
+                />
+                <circle
+                  cx="96"
+                  cy="96"
+                  r="80"
+                  stroke="currentColor"
+                  strokeWidth="12"
+                  fill="transparent"
+                  strokeDasharray={502.65}
+                  strokeDashoffset={502.65 * (1 - (criticalAlerts * 10 + inProgressAlerts * 2) / 100)}
+                  className={cn(
+                    "transition-all duration-1000",
+                    criticalAlerts > 5 ? "text-red-500" : criticalAlerts > 2 ? "text-orange-500" : "text-emerald-500"
+                  )}
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-4xl font-bold tracking-tighter">
+                  {Math.min(100, Math.round((criticalAlerts * 10 + inProgressAlerts * 2)))}%
+                </span>
+                <span className="text-[10px] font-mono text-zinc-500 uppercase">Riesgo</span>
+              </div>
+            </div>
+            <p className="mt-4 text-[10px] text-zinc-400 font-mono uppercase">
+              {criticalAlerts > 5 ? "Estado: Crítico" : criticalAlerts > 2 ? "Estado: Elevado" : "Estado: Estable"}
+            </p>
+          </div>
+        )}
+
+        {config.widgets.includes('top_assets') && (
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 lg:col-span-2">
+            <h3 className="text-xs font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2">
+              <Target size={14} />
+              Activos más Atacados
+            </h3>
+            <div className="h-[200px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[
+                  { name: 'Core API', count: 45, color: '#ef4444' },
+                  { name: 'Auth Server', count: 32, color: '#f97316' },
+                  { name: 'DB Cluster', count: 28, color: '#eab308' },
+                  { name: 'Public Web', count: 15, color: '#3b82f6' },
+                  { name: 'Legacy App', count: 8, color: '#10b981' },
+                ]} layout="vertical">
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" stroke="#4b5563" fontSize={10} width={80} axisLine={false} tickLine={false} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#0d0d0d', border: '1px solid #374151', borderRadius: '8px', fontSize: '10px' }}
+                  />
+                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                    {[
+                      { name: 'Core API', count: 45, color: '#ef4444' },
+                      { name: 'Auth Server', count: 32, color: '#f97316' },
+                      { name: 'DB Cluster', count: 28, color: '#eab308' },
+                      { name: 'Public Web', count: 15, color: '#3b82f6' },
+                      { name: 'Legacy App', count: 8, color: '#10b981' },
+                    ].map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {config.widgets.includes('takedowns_summary') && (
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
+            <h3 className="text-xs font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2">
+              <Ban size={14} />
+              Resumen de Takedowns
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-zinc-900/50 p-4 rounded-lg border border-zinc-800">
+                <div className="text-2xl font-bold text-emerald-400">12</div>
+                <div className="text-[10px] font-mono text-zinc-500 uppercase">Resueltos</div>
+              </div>
+              <div className="bg-zinc-900/50 p-4 rounded-lg border border-zinc-800">
+                <div className="text-2xl font-bold text-yellow-400">5</div>
+                <div className="text-[10px] font-mono text-zinc-500 uppercase">En Proceso</div>
+              </div>
+              <div className="bg-zinc-900/50 p-4 rounded-lg border border-zinc-800">
+                <div className="text-2xl font-bold text-blue-400">3</div>
+                <div className="text-[10px] font-mono text-zinc-500 uppercase">Validación</div>
+              </div>
+              <div className="bg-zinc-900/50 p-4 rounded-lg border border-zinc-800">
+                <div className="text-2xl font-bold text-red-400">1</div>
+                <div className="text-[10px] font-mono text-zinc-500 uppercase">Rechazado</div>
+              </div>
+            </div>
+            <button className="w-full mt-6 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-[10px] font-mono uppercase tracking-widest transition-colors">
+              Ver Gestión Completa
+            </button>
+          </div>
+        )}
+
+        {config.widgets.includes('connectors_status') && (
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
+            <h3 className="text-xs font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2">
+              <Cpu size={14} />
+              Estado de Conectores
+            </h3>
+            <div className="space-y-3">
+              {[
+                { name: 'AbuseIPDB', status: 'online', latency: '120ms' },
+                { name: 'VirusTotal', status: 'online', latency: '245ms' },
+                { name: 'URLHaus', status: 'online', latency: '85ms' },
+                { name: 'Shodan', status: 'degraded', latency: '1.2s' },
+                { name: 'BinaryEdge', status: 'online', latency: '310ms' },
+              ].map(conn => (
+                <div key={conn.name} className="flex items-center justify-between p-2 rounded bg-zinc-900/30 border border-zinc-800/50">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-1.5 h-1.5 rounded-full",
+                      conn.status === 'online' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.5)]'
+                    )} />
+                    <span className="text-xs font-medium">{conn.name}</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-600">{conn.latency}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {config.widgets.includes('trends') && (
           <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 lg:col-span-2">
             <h3 className="text-xs font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2">
@@ -1060,7 +1300,44 @@ function StatCard({ label, value, icon }: { label: string, value: string | numbe
 }
 
 function AlertList({ alerts: rawAlerts, onAlertClick, getCategoryIcon, clients, onFilterClient, selectedCategory, user, t }: { alerts: Alert[], onAlertClick: (id: number) => void, getCategoryIcon: (cat: string) => React.ReactNode, clients: Client[], onFilterClient: (id: string) => void, selectedCategory: string | null, user: User | null, t: any }) {
-  const alerts = Array.isArray(rawAlerts) ? rawAlerts : [];
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedSeverity, setSelectedSeverity] = useState<string>('');
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [sortConfig, setSortConfig] = useState<{ field: 'created_at' | 'severity', order: 'asc' | 'desc' }>({ field: 'created_at', order: 'desc' });
+  const itemsPerPage = 20;
+  let alerts = Array.isArray(rawAlerts) ? [...rawAlerts] : [];
+  
+  // Apply filters
+  if (selectedSeverity) {
+    alerts = alerts.filter(a => a.severity === selectedSeverity);
+  }
+  if (selectedStatus) {
+    alerts = alerts.filter(a => a.status === selectedStatus);
+  }
+
+  // Apply sorting
+  const severityPriority = { critical: 4, high: 3, medium: 2, low: 1 };
+  alerts.sort((a, b) => {
+    if (sortConfig.field === 'created_at') {
+      const valA = new Date(a.created_at).getTime();
+      const valB = new Date(b.created_at).getTime();
+      return sortConfig.order === 'asc' ? valA - valB : valB - valA;
+    } else {
+      const valA = severityPriority[a.severity as keyof typeof severityPriority] || 0;
+      const valB = severityPriority[b.severity as keyof typeof severityPriority] || 0;
+      return sortConfig.order === 'asc' ? valA - valB : valB - valA;
+    }
+  });
+  
+  // Reset to first page when alerts or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [rawAlerts, selectedSeverity, selectedStatus, sortConfig]);
+
+  const totalPages = Math.ceil(alerts.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedAlerts = alerts.slice(startIndex, startIndex + itemsPerPage);
+
   const counts = {
     critical: alerts.filter(a => a.severity === 'critical').length,
     high: alerts.filter(a => a.severity === 'high').length,
@@ -1086,23 +1363,57 @@ function AlertList({ alerts: rawAlerts, onAlertClick, getCategoryIcon, clients, 
 
       <div className="flex justify-between items-center bg-[#0d0d0d] p-4 border border-zinc-800 rounded-xl">
         <div className="flex items-center gap-4">
+          <Filter size={16} className="text-zinc-500" />
           {user?.role !== 'client' && (
-            <>
-              <Filter size={16} className="text-zinc-500" />
-              <select 
-                onChange={(e) => onFilterClient(e.target.value)}
-                className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
-              >
-                <option value="">Todos los Clientes</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </>
+            <select 
+              onChange={(e) => onFilterClient(e.target.value)}
+              className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+            >
+              <option value="">Todos los Clientes</option>
+              {clients.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
           )}
+          {user?.role !== 'client' && <div className="h-4 w-px bg-zinc-800 mx-2" />}
+          <select 
+            value={selectedSeverity}
+            onChange={(e) => setSelectedSeverity(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+          >
+            <option value="">Todas las Severidades</option>
+            <option value="critical">Crítica</option>
+            <option value="high">Alta</option>
+            <option value="medium">Media</option>
+            <option value="low">Baja</option>
+          </select>
+          <select 
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+          >
+            <option value="">Todos los Estados</option>
+            {Object.entries(STATUS_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+          <div className="h-4 w-px bg-zinc-800 mx-2" />
+          <select 
+            value={`${sortConfig.field}-${sortConfig.order}`}
+            onChange={(e) => {
+              const [field, order] = e.target.value.split('-') as ['created_at' | 'severity', 'asc' | 'desc'];
+              setSortConfig({ field, order });
+            }}
+            className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+          >
+            <option value="created_at-desc">Fecha (Reciente)</option>
+            <option value="created_at-asc">Fecha (Antigua)</option>
+            <option value="severity-desc">Severidad (Alta-Baja)</option>
+            <option value="severity-asc">Severidad (Baja-Alta)</option>
+          </select>
         </div>
         <div className="text-[10px] font-mono text-zinc-500 uppercase">
-          Mostrando {alerts.length} alertas
+          Mostrando {alerts.length > 0 ? startIndex + 1 : 0}-{Math.min(startIndex + itemsPerPage, alerts.length)} de {alerts.length} alertas
         </div>
       </div>
 
@@ -1115,7 +1426,7 @@ function AlertList({ alerts: rawAlerts, onAlertClick, getCategoryIcon, clients, 
           <div>Severidad</div>
           <div>Estado</div>
         </div>
-        {alerts.map(alert => (
+        {paginatedAlerts.map(alert => (
           <div 
             key={alert.id} 
             className="data-grid-row"
@@ -1131,18 +1442,75 @@ function AlertList({ alerts: rawAlerts, onAlertClick, getCategoryIcon, clients, 
               <span className="truncate">{alert.category}</span>
             </div>
             <div>
-              <span className={`px-2 py-0.5 rounded-[4px] border text-[9px] font-mono uppercase tracking-tighter ${SEVERITY_COLORS[alert.severity]}`}>
+              <span className={`px-2 py-0.5 rounded-[4px] border text-[9px] font-mono uppercase tracking-tighter ${SEVERITY_COLORS[alert.severity as keyof typeof SEVERITY_COLORS]}`}>
                 {alert.severity}
               </span>
             </div>
             <div>
-              <span className={`px-2 py-0.5 rounded-[4px] border text-[9px] font-mono uppercase tracking-tighter ${STATUS_COLORS[alert.status]}`}>
-                {STATUS_LABELS[alert.status]}
+              <span className={`px-2 py-0.5 rounded-[4px] border text-[9px] font-mono uppercase tracking-tighter ${STATUS_COLORS[alert.status as keyof typeof STATUS_COLORS]}`}>
+                {STATUS_LABELS[alert.status as keyof typeof STATUS_LABELS]}
               </span>
             </div>
           </div>
         ))}
+        {alerts.length === 0 && (
+          <div className="px-6 py-12 text-center text-zinc-600 font-mono text-xs uppercase tracking-widest">
+            NO_ALERTS_FOUND
+          </div>
+        )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex justify-center items-center gap-2 pt-4">
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+            className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          
+          <div className="flex items-center gap-1">
+            {[...Array(totalPages)].map((_, i) => {
+              const pageNum = i + 1;
+              // Show limited page numbers if there are too many
+              if (
+                pageNum === 1 || 
+                pageNum === totalPages || 
+                (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)
+              ) {
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-8 h-8 rounded-lg text-[10px] font-mono transition-all border ${
+                      currentPage === pageNum 
+                        ? "bg-emerald-500/10 border-emerald-500/50 text-emerald-400" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              } else if (
+                pageNum === currentPage - 2 || 
+                pageNum === currentPage + 2
+              ) {
+                return <span key={pageNum} className="text-zinc-600 px-1">...</span>;
+              }
+              return null;
+            })}
+          </div>
+
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2710,9 +3078,11 @@ function AdminSettingsView() {
 }
 
 function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, onBack: () => void, onUpdate: () => void }) {
-  const [alert, setAlert] = useState<(Alert & { comments: Comment[] }) | null>(null);
+  const [alert, setAlert] = useState<(Alert & { comments: Comment[], linked_reports: any[] }) | null>(null);
   const [newComment, setNewComment] = useState('');
   const [updating, setUpdating] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [availableReports, setAvailableReports] = useState<Report[]>([]);
 
   useEffect(() => {
     fetchAlert();
@@ -2722,6 +3092,27 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
     const res = await fetch(`/api/alerts/${id}`);
     const data = await res.json();
     setAlert(data);
+  };
+
+  const fetchAvailableReports = async () => {
+    const res = await fetch('/api/reports', { headers: { 'x-user': user.username } });
+    const data = await res.json();
+    setAvailableReports(data);
+  };
+
+  const handleLinkReport = async (reportId: number) => {
+    await fetch(`/api/reports/${reportId}/links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alert_id: id })
+    });
+    fetchAlert();
+    setShowLinkModal(false);
+  };
+
+  const handleUnlinkReport = async (reportId: number) => {
+    await fetch(`/api/reports/${reportId}/links/${id}`, { method: 'DELETE' });
+    fetchAlert();
   };
 
   const handleStatusChange = async (status: string) => {
@@ -2763,7 +3154,7 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
 
   if (!alert) return <div className="text-zinc-500 font-mono">LOADING_ALERT_DATA...</div>;
 
-  const canManage = user?.role === 'super_admin' || user?.role === 'analyst';
+  const canManage = user?.role === 'super_admin' || user?.role === 'admin';
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-12">
@@ -2843,6 +3234,41 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
                 <p className="text-sm font-mono text-zinc-500">{alert.source || 'Internal Scanner'}</p>
               </div>
             </div>
+
+            <div className="mt-8 pt-8 border-t border-zinc-800">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-[10px] font-mono text-zinc-500 uppercase flex items-center gap-2">
+                  <FileText size={14} />
+                  Informes Vinculados (Trazabilidad)
+                </h3>
+                {canManage && (
+                  <button 
+                    onClick={() => { fetchAvailableReports(); setShowLinkModal(true); }}
+                    className="text-[10px] font-mono text-emerald-500 hover:text-emerald-400 uppercase tracking-tighter flex items-center gap-1"
+                  >
+                    <Plus size={12} /> Vincular Informe
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {alert.linked_reports && alert.linked_reports.length > 0 ? alert.linked_reports.map(report => (
+                  <div key={report.id} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-full pl-3 pr-2 py-1 group">
+                    <span className="text-[10px] text-zinc-300">{report.title}</span>
+                    <span className="text-[8px] font-mono text-zinc-600 uppercase">{report.category}</span>
+                    {canManage && (
+                      <button 
+                        onClick={() => handleUnlinkReport(report.id)}
+                        className="text-zinc-600 hover:text-red-400 transition-colors"
+                      >
+                        <X size={10} />
+                      </button>
+                    )}
+                  </div>
+                )) : (
+                  <p className="text-[10px] text-zinc-600 italic">No hay informes vinculados a esta alerta.</p>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-8">
@@ -2891,6 +3317,40 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
             </form>
           </div>
         </div>
+
+        {showLinkModal && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="w-full max-w-md bg-[#0d0d0d] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
+            >
+              <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
+                <h3 className="text-sm font-bold">Vincular Informe</h3>
+                <button onClick={() => setShowLinkModal(false)} className="text-zinc-500 hover:text-zinc-100">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-4 max-h-[400px] overflow-y-auto space-y-2">
+                {availableReports.map(report => (
+                  <button
+                    key={report.id}
+                    onClick={() => handleLinkReport(report.id)}
+                    className="w-full text-left p-3 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-emerald-500/50 transition-all group"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-medium text-zinc-300 group-hover:text-emerald-400">{report.title}</span>
+                      <span className="text-[8px] font-mono text-zinc-600 uppercase">{report.category}</span>
+                    </div>
+                  </button>
+                ))}
+                {availableReports.length === 0 && (
+                  <p className="text-center py-8 text-xs text-zinc-600 italic">No hay informes disponibles para vincular.</p>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
 
         <div className="space-y-6">
           <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6">
@@ -2952,6 +3412,13 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
                   <FileWarning size={14} />
                   Generar Reporte PDF
                 </button>
+                <button 
+                  onClick={() => (window as any).requestTakedown(alert)}
+                  className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2.5 rounded text-xs font-medium transition-colors flex items-center gap-2 mt-4"
+                >
+                  <Ban size={14} />
+                  Solicitar Takedown
+                </button>
               </div>
             </div>
           )}
@@ -2961,11 +3428,1539 @@ function AlertDetail({ id, user, onBack, onUpdate }: { id: number, user: User, o
   );
 }
 
+function TakedownsView({ user, t }: { user: User, t: any }) {
+  const [takedowns, setTakedowns] = useState<Takedown[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedTakedown, setSelectedTakedown] = useState<Takedown | null>(null);
+  const [newComment, setNewComment] = useState('');
+  const [updating, setUpdating] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [selectedScenario, setSelectedScenario] = useState<string>('');
+  const [selectedPriority, setSelectedPriority] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    fetchTakedowns();
+  }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [takedowns, selectedStatus, selectedScenario, selectedPriority, selectedDate]);
+
+  const filteredTakedowns = takedowns.filter(tk => {
+    const matchesStatus = !selectedStatus || tk.status === selectedStatus;
+    const matchesScenario = !selectedScenario || tk.scenario === selectedScenario;
+    const matchesPriority = !selectedPriority || tk.priority === selectedPriority;
+    const matchesDate = !selectedDate || new Date(tk.created_at).toISOString().split('T')[0] === selectedDate;
+    return matchesStatus && matchesScenario && matchesPriority && matchesDate;
+  });
+
+  const totalPages = Math.ceil(filteredTakedowns.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedTakedowns = filteredTakedowns.slice(startIndex, startIndex + itemsPerPage);
+
+  const fetchTakedowns = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/takedowns', { headers: { 'x-user': user.username } });
+      const data = await res.json();
+      setTakedowns(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setTakedowns([]);
+    }
+    setLoading(false);
+  };
+
+  const fetchTakedownDetails = async (id: number) => {
+    try {
+      const res = await fetch(`/api/takedowns/${id}`, { headers: { 'x-user': user.username } });
+      const data = await res.json();
+      setSelectedTakedown(data);
+    } catch (e) {
+      console.error("Error fetching takedown details:", e);
+    }
+  };
+
+  const handleCommentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTakedown || !newComment.trim()) return;
+
+    try {
+      await fetch(`/api/takedowns/${selectedTakedown.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: newComment, user_id: user.id })
+      });
+      setNewComment('');
+      fetchTakedownDetails(selectedTakedown.id);
+    } catch (e) {
+      console.error("Error submitting comment:", e);
+    }
+  };
+
+  const handleUpdateStatus = async (id: number, status: string) => {
+    setUpdating(true);
+    await fetch(`/api/takedowns/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    await fetchTakedowns();
+    if (selectedTakedown?.id === id) {
+      setSelectedTakedown(prev => prev ? { ...prev, status: status as any } : null);
+    }
+    setUpdating(false);
+  };
+
+  const handleUpdateDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTakedown) return;
+    setUpdating(true);
+    const formData = new FormData(e.target as HTMLFormElement);
+    const updates = {
+      platform_contacted: formData.get('platform_contacted'),
+      request_date: formData.get('request_date'),
+      resolution_date: formData.get('resolution_date'),
+      priority: formData.get('priority'),
+    };
+    await fetch(`/api/takedowns/${selectedTakedown.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    await fetchTakedowns();
+    setSelectedTakedown(null);
+    setUpdating(false);
+  };
+
+  if (loading) return <div className="text-zinc-500 font-mono">LOADING_TAKEDOWNS...</div>;
+
+  return (
+    <div className="space-y-8">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Gestión de Takedowns</h2>
+          <p className="text-zinc-500 text-sm mt-1">Retirada y baja de contenidos fraudulentos o no autorizados.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Filter size={16} className="text-zinc-500" />
+          <select 
+            value={selectedScenario}
+            onChange={(e) => setSelectedScenario(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+          >
+            <option value="">Todos los Escenarios</option>
+            {Object.entries(TAKEDOWN_SCENARIOS).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+          <select 
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+          >
+            <option value="">Todos los Estados</option>
+            {Object.entries(TAKEDOWN_STATUS_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+          <select 
+            value={selectedPriority}
+            onChange={(e) => setSelectedPriority(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+          >
+            <option value="">Todas las Prioridades</option>
+            <option value="low">Baja</option>
+            <option value="medium">Media</option>
+            <option value="high">Alta</option>
+            <option value="critical">Crítica</option>
+          </select>
+          <input 
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-xs focus:outline-none focus:border-emerald-500/50 text-zinc-300"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <div className="xl:col-span-2 space-y-4">
+          <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl overflow-hidden">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="bg-zinc-900/50 border-b border-zinc-800 text-zinc-500 font-mono uppercase tracking-widest">
+                  <th className="px-6 py-4 font-medium">Caso / Cliente</th>
+                  <th className="px-6 py-4 font-medium">Escenario</th>
+                  <th className="px-6 py-4 font-medium">Estado</th>
+                  <th className="px-6 py-4 font-medium">Prioridad</th>
+                  <th className="px-6 py-4 font-medium">Fecha</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/50">
+                {paginatedTakedowns.length > 0 ? paginatedTakedowns.map(tk => (
+                  <tr 
+                    key={tk.id} 
+                    onClick={() => fetchTakedownDetails(tk.id)}
+                    className={cn(
+                      "hover:bg-zinc-800/30 transition-colors cursor-pointer group",
+                      selectedTakedown?.id === tk.id && "bg-emerald-500/5"
+                    )}
+                  >
+                    <td className="px-6 py-4">
+                      <div className="font-bold text-zinc-200 group-hover:text-emerald-400 transition-colors">{tk.title}</div>
+                      <div className="text-[10px] text-zinc-500 font-mono uppercase mt-1">{tk.client_name}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-zinc-400">{TAKEDOWN_SCENARIOS[tk.scenario as keyof typeof TAKEDOWN_SCENARIOS] || tk.scenario}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-[4px] border text-[9px] font-mono uppercase tracking-tighter",
+                        TAKEDOWN_STATUS_COLORS[tk.status as keyof typeof TAKEDOWN_STATUS_COLORS]
+                      )}>
+                        {TAKEDOWN_STATUS_LABELS[tk.status as keyof typeof TAKEDOWN_STATUS_LABELS]}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-[4px] border text-[9px] font-mono uppercase tracking-tighter",
+                        SEVERITY_COLORS[tk.priority as keyof typeof SEVERITY_COLORS]
+                      )}>
+                        {tk.priority}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-zinc-500 font-mono">
+                      {new Date(tk.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center text-zinc-600 font-mono">
+                      NO_TAKEDOWNS_FOUND
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center gap-2 pt-4">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {[...Array(totalPages)].map((_, i) => {
+                  const pageNum = i + 1;
+                  if (
+                    pageNum === 1 || 
+                    pageNum === totalPages || 
+                    (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)
+                  ) {
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-8 h-8 rounded-lg text-[10px] font-mono transition-all border ${
+                          currentPage === pageNum 
+                            ? "bg-emerald-500/10 border-emerald-500/50 text-emerald-400" 
+                            : "bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-300"
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  } else if (
+                    pageNum === currentPage - 2 || 
+                    pageNum === currentPage + 2
+                  ) {
+                    return <span key={pageNum} className="text-zinc-600 px-1">...</span>;
+                  }
+                  return null;
+                })}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-6">
+          <AnimatePresence mode="wait">
+            {selectedTakedown ? (
+              <motion.div 
+                key={selectedTakedown.id}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 space-y-6"
+              >
+                <div className="flex justify-between items-start">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-400">Detalle del Procedimiento</h3>
+                  <button onClick={() => setSelectedTakedown(null)} className="text-zinc-600 hover:text-zinc-300">
+                    <X size={16} />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Objetivo / URL</h4>
+                    <p className="text-xs text-emerald-400 break-all font-mono">{selectedTakedown.target_url}</p>
+                  </div>
+                  {selectedTakedown.description && (
+                    <div>
+                      <h4 className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Descripción</h4>
+                      <p className="text-xs text-zinc-300 leading-relaxed">{selectedTakedown.description}</p>
+                    </div>
+                  )}
+                  {selectedTakedown.evidence && (
+                    <div>
+                      <h4 className="text-[10px] font-mono text-zinc-500 uppercase mb-1">Evidencias</h4>
+                      <div className="bg-zinc-900/50 border border-zinc-800 rounded-lg p-3">
+                        <pre className="text-[10px] font-mono text-zinc-400 whitespace-pre-wrap overflow-auto max-h-[150px]">
+                          {(() => {
+                            try {
+                              const ev = JSON.parse(selectedTakedown.evidence);
+                              return JSON.stringify(ev, null, 2);
+                            } catch (e) {
+                              return selectedTakedown.evidence;
+                            }
+                          })()}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-zinc-800 space-y-4">
+                  <h4 className="text-[10px] font-mono text-zinc-500 uppercase">Actualizar Estado</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(TAKEDOWN_STATUS_LABELS).map(([key, label]) => (
+                      <button
+                        key={key}
+                        disabled={updating}
+                        onClick={() => handleUpdateStatus(selectedTakedown.id, key)}
+                        className={cn(
+                          "text-left px-3 py-2 rounded text-[9px] font-mono uppercase tracking-tighter transition-all border",
+                          selectedTakedown.status === key 
+                            ? TAKEDOWN_STATUS_COLORS[key as keyof typeof TAKEDOWN_STATUS_COLORS]
+                            : 'bg-zinc-900 text-zinc-500 border-zinc-800 hover:border-zinc-700'
+                        )}
+                      >
+                        {label.split(' ')[0]}...
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {(user.role === 'super_admin' || user.role === 'admin') && (
+                  <form onSubmit={handleUpdateDetails} className="pt-4 border-t border-zinc-800 space-y-4">
+                    <h4 className="text-[10px] font-mono text-zinc-500 uppercase">Gestión Operativa</h4>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[9px] font-mono text-zinc-600 uppercase block mb-1">Prioridad</label>
+                          <select 
+                            name="priority"
+                            defaultValue={selectedTakedown.priority}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50"
+                          >
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                            <option value="critical">Critical</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-mono text-zinc-600 uppercase block mb-1">Plataforma / Entidad</label>
+                          <input 
+                            name="platform_contacted"
+                            defaultValue={selectedTakedown.platform_contacted || ''}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50"
+                            placeholder="Ej: GoDaddy, Facebook, etc."
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[9px] font-mono text-zinc-600 uppercase block mb-1">Fecha Solicitud</label>
+                          <input 
+                            name="request_date"
+                            type="date"
+                            defaultValue={selectedTakedown.request_date ? selectedTakedown.request_date.split('T')[0] : ''}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-mono text-zinc-600 uppercase block mb-1">Fecha Resolución</label>
+                          <input 
+                            name="resolution_date"
+                            type="date"
+                            defaultValue={selectedTakedown.resolution_date ? selectedTakedown.resolution_date.split('T')[0] : ''}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-xs focus:outline-none focus:border-emerald-500/50"
+                          />
+                        </div>
+                      </div>
+                      {/* Removed redundant description field as it's now handled by comments */}
+                      <button 
+                        type="submit"
+                        disabled={updating}
+                        className="w-full bg-emerald-500 hover:bg-emerald-600 text-black py-2 rounded text-[10px] font-bold uppercase tracking-widest transition-colors"
+                      >
+                        {updating ? 'GUARDANDO...' : 'ACTUALIZAR TRAZABILIDAD'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                <div className="pt-6 border-t border-zinc-800">
+                  <h3 className="text-[10px] font-mono text-zinc-500 uppercase mb-6 flex items-center gap-2">
+                    <MessageSquare size={14} />
+                    Timeline & Comentarios
+                  </h3>
+                  
+                  <div className="space-y-6 mb-8 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    {selectedTakedown.comments && selectedTakedown.comments.length > 0 ? selectedTakedown.comments.map(comment => (
+                      <div key={comment.id} className="flex gap-4">
+                        <div className="w-8 h-8 bg-zinc-800 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
+                          {comment.username[0].toUpperCase()}
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-medium text-zinc-300">{comment.username}</span>
+                            <span className="text-[9px] text-zinc-600 font-mono">
+                              {new Date(comment.created_at).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-xs text-zinc-400 bg-zinc-900/50 p-3 rounded border border-zinc-800/50">
+                            {comment.content}
+                          </p>
+                        </div>
+                      </div>
+                    )) : (
+                      <p className="text-[10px] text-zinc-600 italic">No hay comentarios en este procedimiento.</p>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleCommentSubmit} className="space-y-3">
+                    <textarea
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="Añadir una actualización o comentario..."
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-xs text-zinc-300 focus:outline-none focus:border-emerald-500/50 min-h-[80px] resize-none"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={!newComment.trim()}
+                        className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded text-[10px] font-mono uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Enviar Comentario
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </motion.div>
+            ) : (
+              <div className="bg-zinc-900/30 border border-dashed border-zinc-800 rounded-xl p-12 text-center">
+                <Ban className="mx-auto text-zinc-700 mb-4" size={32} />
+                <p className="text-xs text-zinc-500 font-mono uppercase tracking-widest">Seleccione un caso para ver detalles</p>
+              </div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DocumentManagementView({ user, clients }: { user: User, clients: Client[] }) {
+  const [reports, setReports] = useState<Report[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [showSectorModal, setShowSectorModal] = useState(false);
+  const [editingReport, setEditingReport] = useState<Report | null>(null);
+  const [uploadCategory, setUploadCategory] = useState('public:Sectoriales');
+  const [editCategory, setEditCategory] = useState('');
+  const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
+  const [availableAlerts, setAvailableAlerts] = useState<Alert[]>([]);
+  const [selectedNav, setSelectedNav] = useState<{
+    type: 'public' | 'private';
+    category?: string;
+    client_id?: number;
+    subtype?: string;
+    sector_id?: number;
+  }>({ type: 'public', category: 'Tendencias' });
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [uploadPdfFile, setUploadPdfFile] = useState<File | null>(null);
+  const [uploadEditableFile, setUploadEditableFile] = useState<File | null>(null);
+  const [editPdfFile, setEditPdfFile] = useState<File | null>(null);
+  const [editEditableFile, setEditEditableFile] = useState<File | null>(null);
+  const [removePdf, setRemovePdf] = useState(false);
+  const [removeEditable, setRemoveEditable] = useState(false);
+
+  const formatTimelineDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const day = date.getDate();
+    const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
+  useEffect(() => {
+    if (!showUploadModal) {
+      setUploadPdfFile(null);
+      setUploadEditableFile(null);
+    }
+  }, [showUploadModal]);
+
+  useEffect(() => {
+    if (!editingReport) {
+      setEditPdfFile(null);
+      setEditEditableFile(null);
+      setRemovePdf(false);
+      setRemoveEditable(false);
+    }
+  }, [editingReport]);
+
+  useEffect(() => {
+    fetchReports();
+    fetchSectors();
+  }, []);
+
+  useEffect(() => {
+    if (editingReport) {
+      setEditCategory(editingReport.type === 'public' ? `public:${editingReport.category}` : `private:${editingReport.subtype}`);
+    } else {
+      setEditCategory('');
+    }
+  }, [editingReport]);
+
+  const fetchReports = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/reports', { headers: { 'x-user': user.username } });
+      const data = await res.json();
+      setReports(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setReports([]);
+    }
+    setLoading(false);
+  };
+
+  const fetchSectors = async () => {
+    try {
+      const res = await fetch('/api/sectors');
+      const data = await res.json();
+      setSectors(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setSectors([]);
+    }
+  };
+
+  const fetchAvailableAlerts = async () => {
+    const res = await fetch('/api/alerts', { headers: { 'x-user': user.username } });
+    const data = await res.json();
+    setAvailableAlerts(data);
+  };
+
+  const handleLinkAlert = async (alertId: number) => {
+    if (!selectedReportId) return;
+    await fetch(`/api/reports/${selectedReportId}/links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alert_id: alertId })
+    });
+    fetchReports();
+    setShowLinkModal(false);
+  };
+
+  const handleUnlinkAlert = async (reportId: number, alertId: number) => {
+    await fetch(`/api/reports/${reportId}/links/${alertId}`, { method: 'DELETE' });
+    fetchReports();
+  };
+
+  const handleUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const formData = new FormData(form);
+    const categorySubtype = formData.get('category_subtype') as string;
+    const [reportType, value] = categorySubtype.split(':');
+
+    try {
+      // Handle file uploads first
+      const pdfFile = uploadPdfFile || (form.querySelector('input[name="pdf_file"]') as HTMLInputElement).files?.[0];
+      const editableFile = uploadEditableFile || (form.querySelector('input[name="editable_file"]') as HTMLInputElement).files?.[0];
+
+      let file_url = '';
+      let editable_url = '';
+
+      if (pdfFile) {
+        const pdfFormData = new FormData();
+        pdfFormData.append('file', pdfFile);
+        const res = await fetch('/api/upload', { method: 'POST', body: pdfFormData });
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Upload failed: ${res.status} ${res.statusText}. ${errorText.substring(0, 100)}`);
+        }
+        const data = await res.json();
+        file_url = data.url;
+      }
+
+      if (editableFile) {
+        const editFormData = new FormData();
+        editFormData.append('file', editableFile);
+        const res = await fetch('/api/upload', { method: 'POST', body: editFormData });
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Upload failed: ${res.status} ${res.statusText}. ${errorText.substring(0, 100)}`);
+        }
+        const data = await res.json();
+        editable_url = data.url;
+      }
+
+      const newReport = {
+        title: formData.get('title'),
+        description: formData.get('description'),
+        category: reportType === 'public' ? value : 'Privado',
+        subtype: reportType === 'private' ? value : null,
+        type: reportType,
+        client_id: formData.get('client_id') || null,
+        sector_id: formData.get('sector_id') || null,
+        file_url: file_url || formData.get('file_url'), // Fallback to URL if no file
+        editable_url: editable_url || formData.get('editable_url') || null,
+        created_by: user.username
+      };
+
+      await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newReport)
+      });
+
+      setShowUploadModal(false);
+      fetchReports();
+    } catch (error) {
+      console.error('Upload failed:', error);
+      alert('Error al subir el informe');
+    }
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReport) return;
+    const form = e.target as HTMLFormElement;
+    const formData = new FormData(form);
+    const categorySubtype = formData.get('category_subtype') as string;
+    const [reportType, value] = categorySubtype.split(':');
+
+    try {
+      // Handle file uploads if new files are selected
+      const pdfFile = editPdfFile || (form.querySelector('input[name="pdf_file"]') as HTMLInputElement).files?.[0];
+      const editableFile = editEditableFile || (form.querySelector('input[name="editable_file"]') as HTMLInputElement).files?.[0];
+
+      let file_url = removePdf ? null : editingReport.file_url;
+      let editable_url = removeEditable ? null : editingReport.editable_url;
+
+      if (pdfFile) {
+        const pdfFormData = new FormData();
+        pdfFormData.append('file', pdfFile);
+        const res = await fetch('/api/upload', { method: 'POST', body: pdfFormData });
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Upload failed: ${res.status} ${res.statusText}. ${errorText.substring(0, 100)}`);
+        }
+        const data = await res.json();
+        file_url = data.url;
+      }
+
+      if (editableFile) {
+        const editFormData = new FormData();
+        editFormData.append('file', editableFile);
+        const res = await fetch('/api/upload', { method: 'POST', body: editFormData });
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(`Upload failed: ${res.status} ${res.statusText}. ${errorText.substring(0, 100)}`);
+        }
+        const data = await res.json();
+        editable_url = data.url;
+      }
+
+      const updatedReport = {
+        title: formData.get('title'),
+        description: formData.get('description'),
+        category: reportType === 'public' ? value : 'Privado',
+        subtype: reportType === 'private' ? value : null,
+        type: reportType,
+        client_id: formData.get('client_id') || null,
+        sector_id: formData.get('sector_id') || null,
+        file_url,
+        editable_url
+      };
+
+      await fetch(`/api/reports/${editingReport.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedReport)
+      });
+
+      setEditingReport(null);
+      fetchReports();
+    } catch (error) {
+      console.error('Edit failed:', error);
+      alert('Error al editar el informe');
+    }
+  };
+
+  const handleCreateSector = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const formData = new FormData(e.target as HTMLFormElement);
+    const name = formData.get('name') as string;
+
+    await fetch('/api/sectors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+
+    setShowSectorModal(false);
+    fetchSectors();
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('¿Estás seguro de eliminar este informe?')) return;
+    await fetch(`/api/reports/${id}`, { method: 'DELETE' });
+    fetchReports();
+    if (selectedReport?.id === id) setSelectedReport(null);
+  };
+
+  const filteredReports = reports
+    .filter(r => {
+      if (selectedNav.type === 'public') {
+        if (selectedNav.category === 'Sectoriales' && selectedNav.sector_id) {
+          return r.type === 'public' && r.category === 'Sectoriales' && r.sector_id === selectedNav.sector_id;
+        }
+        return r.type === 'public' && r.category === selectedNav.category;
+      } else {
+        return r.type === 'private' && 
+               r.client_id === selectedNav.client_id && 
+               r.subtype === selectedNav.subtype;
+      }
+    })
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const groupedReports = filteredReports.reduce((acc, report) => {
+    const date = new Date(report.created_at);
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    if (!acc[year]) acc[year] = {};
+    if (!acc[year][month]) acc[year][month] = [];
+    acc[year][month].push(report);
+    return acc;
+  }, {} as Record<number, Record<number, Report[]>>);
+
+  const sortedYears = Object.keys(groupedReports).map(Number).sort((a, b) => b - a);
+  const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+  if (loading) return <div className="text-zinc-500 font-mono">LOADING_REPORTS...</div>;
+
+  const isAdmin = user.role === 'super_admin' || user.role === 'admin';
+  const visibleClients = user.role === 'client' 
+    ? clients.filter(c => c.id === user.client_id)
+    : clients;
+
+  return (
+    <div className="flex gap-8 h-[calc(100vh-180px)]">
+      {/* Sidebar Navigation */}
+      <div className="w-64 flex-shrink-0 bg-[#0d0d0d] border border-zinc-800 rounded-xl overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-zinc-800 bg-zinc-900/50">
+          <h3 className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">Navegación</h3>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2 space-y-4">
+          {/* Public Reports Section */}
+          <div className="space-y-1">
+            <div className="px-3 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-tighter flex items-center gap-2">
+              <Globe size={12} /> Informes Públicos
+            </div>
+            {PUBLIC_REPORT_CATEGORIES.map(cat => (
+              <div key={cat} className="space-y-1">
+                <button
+                  onClick={() => setSelectedNav({ type: 'public', category: cat })}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all ${
+                    selectedNav.type === 'public' && selectedNav.category === cat && !selectedNav.sector_id
+                      ? 'bg-emerald-500/10 text-emerald-400 font-medium'
+                      : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
+                  }`}
+                >
+                  {cat}
+                </button>
+                {cat === 'Sectoriales' && (
+                  <div className="pl-4 space-y-1">
+                    {sectors.map(sector => (
+                      <button
+                        key={sector.id}
+                        onClick={() => setSelectedNav({ type: 'public', category: 'Sectoriales', sector_id: sector.id })}
+                        className={`w-full text-left px-3 py-1.5 rounded-lg text-[11px] transition-all ${
+                          selectedNav.sector_id === sector.id
+                            ? 'bg-emerald-500/10 text-emerald-400 font-medium'
+                            : 'text-zinc-600 hover:bg-zinc-900 hover:text-zinc-400'
+                        }`}
+                      >
+                        {sector.name}
+                      </button>
+                    ))}
+                    {isAdmin && (
+                      <button
+                        onClick={() => setShowSectorModal(true)}
+                        className="w-full text-left px-3 py-1.5 rounded-lg text-[10px] text-emerald-500/60 hover:text-emerald-400 flex items-center gap-1 font-mono uppercase"
+                      >
+                        <Plus size={10} /> Nuevo Sector
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Private Reports Section */}
+          <div className="space-y-1">
+            <div className="px-3 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-tighter flex items-center gap-2">
+              <Lock size={12} /> Informes Privados
+            </div>
+            {visibleClients.map(client => (
+              <div key={client.id} className="space-y-1">
+                <div className="px-3 py-1 text-[10px] text-zinc-600 font-medium italic">{client.name}</div>
+                {PRIVATE_REPORT_SUBTYPES.map(sub => (
+                  <button
+                    key={`${client.id}-${sub}`}
+                    onClick={() => setSelectedNav({ type: 'private', client_id: client.id, subtype: sub })}
+                    className={`w-full text-left px-6 py-1.5 rounded-lg text-[11px] transition-all ${
+                      selectedNav.type === 'private' && selectedNav.client_id === client.id && selectedNav.subtype === sub
+                        ? 'bg-emerald-500/10 text-emerald-400 font-medium'
+                        : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300'
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex gap-8 overflow-hidden">
+        {/* Timeline List */}
+        <div className={`flex-1 flex flex-col gap-6 overflow-hidden ${selectedReport ? 'hidden lg:flex' : 'flex'}`}>
+          <div className="flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-bold tracking-tight">
+                {selectedNav.type === 'public' ? selectedNav.category : `${selectedNav.subtype} - ${clients.find(c => c.id === selectedNav.client_id)?.name}`}
+              </h2>
+              <p className="text-zinc-500 text-xs mt-1">
+                {filteredReports.length} informes encontrados
+              </p>
+            </div>
+            {isAdmin && (
+              <button 
+                onClick={() => setShowUploadModal(true)}
+                className="bg-emerald-500 hover:bg-emerald-600 text-black px-4 py-2 rounded text-xs font-bold transition-colors flex items-center gap-2"
+              >
+                <Plus size={14} />
+                Subir Informe
+              </button>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4 custom-scrollbar">
+            {filteredReports.length > 0 ? (
+              <div className="relative border-l border-zinc-800 ml-4 pl-8 py-4">
+                {sortedYears.map(year => (
+                  <React.Fragment key={year}>
+                    {/* Year Separator */}
+                    <div className="relative mb-8 -ml-8 pl-8 flex items-center">
+                      <div className="absolute -left-[9px] w-4 h-4 rounded-full bg-orange-500 border-2 border-zinc-900 z-10 shadow-[0_0_10px_rgba(249,115,22,0.4)]"></div>
+                      <span className="text-[10px] font-bold text-orange-500 uppercase tracking-widest font-mono bg-[#0a0a0a] px-3 py-1 rounded-full border border-orange-500/20">
+                        Año {year}
+                      </span>
+                    </div>
+                    
+                    {Object.keys(groupedReports[year]).map(Number).sort((a, b) => b - a).map(month => (
+                      <React.Fragment key={`${year}-${month}`}>
+                        {/* Month Separator */}
+                        <div className="relative mb-8 -ml-8 pl-8 flex items-center">
+                          <div className="absolute -left-[9px] w-4 h-4 rounded-full bg-emerald-500 border-2 border-zinc-900 z-10 shadow-[0_0_10px_rgba(16,185,129,0.4)]"></div>
+                          <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest font-mono bg-[#0a0a0a] px-3 py-1 rounded-full border border-emerald-500/20">
+                            {monthNames[month]}
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-8 mb-12">
+                          {groupedReports[year][month].map(report => (
+                            <div key={report.id} className="relative group">
+                              {/* Timeline Dot */}
+                              <div className="absolute -left-[41px] top-2 w-4 h-4 rounded-full bg-zinc-900 border-2 border-zinc-800 group-hover:border-emerald-500 transition-colors z-10"></div>
+                              
+                              <div 
+                                onClick={() => setSelectedReport(report)}
+                                className={`p-6 rounded-xl border transition-all cursor-pointer text-left ${
+                                  selectedReport?.id === report.id 
+                                    ? 'bg-emerald-500/5 border-emerald-500/30' 
+                                    : 'bg-[#0d0d0d] border-zinc-800 hover:border-zinc-700'
+                                }`}
+                              >
+                                <div className="flex justify-between items-start mb-2">
+                                  <span className="text-[10px] font-mono text-zinc-500 uppercase">{formatTimelineDate(report.created_at)}</span>
+                                  {isAdmin && (
+                                    <div className="flex items-center gap-2">
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); setEditingReport(report); }}
+                                        className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-emerald-400 hover:border-emerald-500/50 transition-all"
+                                        title="Editar Informe"
+                                      >
+                                        <FileEdit size={14} />
+                                      </button>
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); handleDelete(report.id); }}
+                                        className="p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-red-400 hover:border-red-500/50 transition-all"
+                                        title="Eliminar Informe"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                                <h3 className="font-bold text-zinc-200 group-hover:text-emerald-400 transition-colors">{report.title}</h3>
+                                <p className="text-xs text-zinc-500 mt-2 line-clamp-2">{report.description}</p>
+                                
+                                {report.type !== 'public' && report.subtype !== 'Sectorial Ad-hoc' && (
+                                  <div className="mt-4 flex flex-wrap gap-2">
+                                    {report.linked_alerts?.map(alert => (
+                                      <span key={alert.id} className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded text-[9px] text-zinc-400">
+                                        #{alert.id}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-zinc-600 font-mono border border-dashed border-zinc-800 rounded-xl">
+                <FileX size={48} className="mb-4 opacity-20" />
+                <p className="text-xs uppercase tracking-widest">No hay informes en esta sección</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Detail View */}
+        <AnimatePresence>
+          {selectedReport && (
+            <motion.div 
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="w-full lg:w-[450px] bg-[#0d0d0d] border border-zinc-800 rounded-xl flex flex-col overflow-hidden"
+            >
+              <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/30">
+                <h3 className="text-xs font-bold uppercase tracking-widest">Detalle del Informe</h3>
+                <button onClick={() => setSelectedReport(null)} className="text-zinc-500 hover:text-zinc-100">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+                <div className="space-y-4">
+                  <div className="p-4 bg-zinc-900 rounded-xl border border-zinc-800 flex items-center gap-4">
+                    <div className="p-3 bg-emerald-500/10 rounded-lg text-emerald-500">
+                      <FileText size={24} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-lg">{selectedReport.title}</h4>
+                      <p className="text-[10px] font-mono text-zinc-500 uppercase">{selectedReport.category} {selectedReport.subtype ? `• ${selectedReport.subtype}` : ''}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <h5 className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">Descripción</h5>
+                    <p className="text-sm text-zinc-400 leading-relaxed">{selectedReport.description}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 pt-4">
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-mono text-zinc-600 uppercase">Fecha</span>
+                      <p className="text-xs text-zinc-300">{new Date(selectedReport.created_at).toLocaleString()}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-mono text-zinc-600 uppercase">Autor</span>
+                      <p className="text-xs text-zinc-300">{selectedReport.created_by}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h5 className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">Archivos Disponibles</h5>
+                  <div className="space-y-2">
+                    <a 
+                      href={selectedReport.file_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center justify-between p-4 bg-zinc-900 border border-zinc-800 rounded-xl hover:border-emerald-500/50 transition-all group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-red-500/10 text-red-500 rounded-lg">
+                          <FileText size={18} />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-xs font-bold text-zinc-200 group-hover:text-emerald-400">Informe PDF</p>
+                          <p className="text-[9px] text-zinc-500">Documento final para consulta</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={16} className="text-zinc-700 group-hover:text-emerald-500" />
+                    </a>
+
+                    {selectedReport.editable_url && isAdmin && (
+                      <a 
+                        href={selectedReport.editable_url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="w-full flex items-center justify-between p-4 bg-zinc-900 border border-zinc-800 rounded-xl hover:border-blue-500/50 transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-blue-500/10 text-blue-500 rounded-lg">
+                            <FileEdit size={18} />
+                          </div>
+                          <div className="text-left">
+                            <p className="text-xs font-bold text-zinc-200 group-hover:text-blue-400">Archivo Editable</p>
+                            <p className="text-[9px] text-zinc-500">Word / PPT (Solo Analistas)</p>
+                          </div>
+                        </div>
+                        <ChevronRight size={16} className="text-zinc-700 group-hover:text-blue-500" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {selectedReport.type !== 'public' && selectedReport.subtype !== 'Sectorial Ad-hoc' && (
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h5 className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">Alertas Vinculadas</h5>
+                      {isAdmin && (
+                        <button 
+                          onClick={() => { setSelectedReportId(selectedReport.id); fetchAvailableAlerts(); setShowLinkModal(true); }}
+                          className="text-[10px] font-mono text-emerald-500 hover:text-emerald-400 uppercase"
+                        >
+                          + Vincular
+                        </button>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      {selectedReport.linked_alerts?.map(alert => (
+                        <div key={alert.id} className="flex items-center justify-between p-3 bg-zinc-900/50 border border-zinc-800 rounded-lg group/alert">
+                          <div className="flex items-center gap-3">
+                            <span className={`w-2 h-2 rounded-full ${SEVERITY_COLORS[alert.severity as keyof typeof SEVERITY_COLORS]?.split(' ')[0] || 'bg-zinc-500'}`}></span>
+                            <span className="text-xs text-zinc-300">{alert.title}</span>
+                          </div>
+                          {isAdmin && (
+                            <button 
+                              onClick={() => handleUnlinkAlert(selectedReport.id, alert.id)}
+                              className="text-zinc-600 hover:text-red-400 opacity-0 group-hover/alert:opacity-100 transition-all"
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {(!selectedReport.linked_alerts || selectedReport.linked_alerts.length === 0) && (
+                        <p className="text-[10px] text-zinc-600 italic text-center py-4">No hay alertas vinculadas a este informe</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-lg bg-[#0d0d0d] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
+          >
+            <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
+              <h3 className="text-lg font-bold">Subir Nuevo Informe</h3>
+              <button onClick={() => setShowUploadModal(false)} className="text-zinc-500 hover:text-zinc-100">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleUpload} className="p-8 space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono text-zinc-500 uppercase">Título</label>
+                  <input name="title" required className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono text-zinc-500 uppercase">Descripción</label>
+                  <textarea name="description" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50 min-h-[80px]" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-zinc-500 uppercase">Categoría / Subtipo</label>
+                    <select 
+                      name="category_subtype" 
+                      required 
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+                      onChange={(e) => setUploadCategory(e.target.value)}
+                      defaultValue="public:Sectoriales"
+                    >
+                      <optgroup label="Públicos">
+                        {PUBLIC_REPORT_CATEGORIES.map(c => <option key={c} value={`public:${c}`}>{c}</option>)}
+                      </optgroup>
+                      <optgroup label="Privados">
+                        {PRIVATE_REPORT_SUBTYPES.map(c => <option key={c} value={`private:${c}`}>{c}</option>)}
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className={cn(
+                      "text-[10px] font-mono uppercase",
+                      uploadCategory === 'public:Sectoriales' ? "text-zinc-500" : "text-zinc-700"
+                    )}>
+                      Sector (Solo Sectoriales)
+                    </label>
+                    <select 
+                      name="sector_id" 
+                      disabled={uploadCategory !== 'public:Sectoriales'}
+                      className={cn(
+                        "w-full bg-zinc-900 border rounded-lg px-4 py-2 text-sm focus:outline-none",
+                        uploadCategory === 'public:Sectoriales' 
+                          ? "border-zinc-800 focus:border-emerald-500/50 text-zinc-100" 
+                          : "border-zinc-900 text-zinc-700 cursor-not-allowed"
+                      )}
+                    >
+                      <option value="">Ninguno</option>
+                      {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className={cn(
+                    "text-[10px] font-mono uppercase",
+                    uploadCategory.startsWith('private:') ? "text-zinc-500" : "text-zinc-700"
+                  )}>
+                    Cliente (Solo para Privados)
+                  </label>
+                  <select 
+                    name="client_id" 
+                    disabled={!uploadCategory.startsWith('private:')}
+                    className={cn(
+                      "w-full bg-zinc-900 border rounded-lg px-4 py-2 text-sm focus:outline-none",
+                      uploadCategory.startsWith('private:') 
+                        ? "border-zinc-800 focus:border-emerald-500/50 text-zinc-100" 
+                        : "border-zinc-900 text-zinc-700 cursor-not-allowed"
+                    )}
+                  >
+                    <option value="">Ninguno (Público)</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-zinc-500 uppercase">Archivo PDF (Final)</label>
+                    <div 
+                      className="relative group/file"
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const file = e.dataTransfer.files?.[0];
+                        if (file && file.type === 'application/pdf') {
+                          setUploadPdfFile(file);
+                        }
+                      }}
+                    >
+                      <input 
+                        type="file" 
+                        name="pdf_file" 
+                        accept=".pdf" 
+                        className="hidden" 
+                        id="pdf_upload" 
+                        onChange={(e) => setUploadPdfFile(e.target.files?.[0] || null)}
+                      />
+                      <label htmlFor="pdf_upload" className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl transition-all cursor-pointer ${uploadPdfFile ? 'border-emerald-500 bg-emerald-500/10' : 'border-zinc-800 hover:border-emerald-500/50 hover:bg-emerald-500/5'}`}>
+                        <Upload size={20} className={uploadPdfFile ? 'text-emerald-500 mb-2' : 'text-zinc-500 mb-2'} />
+                        <span className={`text-[10px] uppercase font-mono ${uploadPdfFile ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                          {uploadPdfFile ? uploadPdfFile.name : 'Seleccionar o arrastrar PDF'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-zinc-500 uppercase">Archivo Editable (Word/PPT)</label>
+                    <div 
+                      className="relative group/file"
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const file = e.dataTransfer.files?.[0];
+                        const allowedTypes = [
+                          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                          'application/msword',
+                          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                          'application/vnd.ms-powerpoint'
+                        ];
+                        if (file && (allowedTypes.includes(file.type) || file.name.endsWith('.doc') || file.name.endsWith('.docx') || file.name.endsWith('.ppt') || file.name.endsWith('.pptx'))) {
+                          setUploadEditableFile(file);
+                        }
+                      }}
+                    >
+                      <input 
+                        type="file" 
+                        name="editable_file" 
+                        accept=".doc,.docx,.ppt,.pptx" 
+                        className="hidden" 
+                        id="editable_upload" 
+                        onChange={(e) => setUploadEditableFile(e.target.files?.[0] || null)}
+                      />
+                      <label htmlFor="editable_upload" className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl transition-all cursor-pointer ${uploadEditableFile ? 'border-blue-500 bg-blue-500/10' : 'border-zinc-800 hover:border-blue-500/50 hover:bg-blue-500/5'}`}>
+                        <Upload size={20} className={uploadEditableFile ? 'text-blue-500 mb-2' : 'text-zinc-500 mb-2'} />
+                        <span className={`text-[10px] uppercase font-mono ${uploadEditableFile ? 'text-blue-400' : 'text-zinc-500'}`}>
+                          {uploadEditableFile ? uploadEditableFile.name : 'Seleccionar o arrastrar Editable'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-bold py-3 rounded-xl transition-all">
+                Subir Informe
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {editingReport && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-lg bg-[#0d0d0d] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
+          >
+            <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
+              <h3 className="text-lg font-bold">Editar Informe</h3>
+              <button onClick={() => setEditingReport(null)} className="text-zinc-500 hover:text-zinc-100">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleEdit} className="p-8 space-y-6">
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono text-zinc-500 uppercase">Título</label>
+                  <input name="title" defaultValue={editingReport.title} required className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono text-zinc-500 uppercase">Descripción</label>
+                  <textarea name="description" defaultValue={editingReport.description} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50 min-h-[80px]" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-zinc-500 uppercase">Categoría / Subtipo</label>
+                    <select 
+                      name="category_subtype" 
+                      defaultValue={editingReport.type === 'public' ? `public:${editingReport.category}` : `private:${editingReport.subtype}`} 
+                      required 
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50"
+                      onChange={(e) => setEditCategory(e.target.value)}
+                    >
+                      <optgroup label="Públicos">
+                        {PUBLIC_REPORT_CATEGORIES.map(c => <option key={c} value={`public:${c}`}>{c}</option>)}
+                      </optgroup>
+                      <optgroup label="Privados">
+                        {PRIVATE_REPORT_SUBTYPES.map(c => <option key={c} value={`private:${c}`}>{c}</option>)}
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className={cn(
+                      "text-[10px] font-mono uppercase",
+                      editCategory === 'public:Sectoriales' ? "text-zinc-500" : "text-zinc-700"
+                    )}>
+                      Sector (Solo Sectoriales)
+                    </label>
+                    <select 
+                      name="sector_id" 
+                      defaultValue={editingReport.sector_id || ''} 
+                      disabled={editCategory !== 'public:Sectoriales'}
+                      className={cn(
+                        "w-full bg-zinc-900 border rounded-lg px-4 py-2 text-sm focus:outline-none",
+                        editCategory === 'public:Sectoriales' 
+                          ? "border-zinc-800 focus:border-emerald-500/50 text-zinc-100" 
+                          : "border-zinc-900 text-zinc-700 cursor-not-allowed"
+                      )}
+                    >
+                      <option value="">Ninguno</option>
+                      {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className={cn(
+                    "text-[10px] font-mono uppercase",
+                    editCategory.startsWith('private:') ? "text-zinc-500" : "text-zinc-700"
+                  )}>
+                    Cliente (Solo para Privados)
+                  </label>
+                  <select 
+                    name="client_id" 
+                    defaultValue={editingReport.client_id || ''} 
+                    disabled={!editCategory.startsWith('private:')}
+                    className={cn(
+                      "w-full bg-zinc-900 border rounded-lg px-4 py-2 text-sm focus:outline-none",
+                      editCategory.startsWith('private:') 
+                        ? "border-zinc-800 focus:border-emerald-500/50 text-zinc-100" 
+                        : "border-zinc-900 text-zinc-700 cursor-not-allowed"
+                    )}
+                  >
+                    <option value="">Ninguno (Público)</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Actualizar PDF (Opcional)</label>
+                      {(editingReport.file_url || editPdfFile) && !removePdf && (
+                        <button 
+                          type="button"
+                          onClick={() => { setRemovePdf(true); setEditPdfFile(null); }}
+                          className="text-[9px] font-mono text-red-500 hover:text-red-400 uppercase"
+                        >
+                          Eliminar archivo actual
+                        </button>
+                      )}
+                      {removePdf && (
+                        <button 
+                          type="button"
+                          onClick={() => setRemovePdf(false)}
+                          className="text-[9px] font-mono text-emerald-500 hover:text-emerald-400 uppercase"
+                        >
+                          Restaurar original
+                        </button>
+                      )}
+                    </div>
+                    <div 
+                      className="relative group/file"
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const file = e.dataTransfer.files?.[0];
+                        if (file && file.type === 'application/pdf') {
+                          setEditPdfFile(file);
+                          setRemovePdf(false);
+                        }
+                      }}
+                    >
+                      <input 
+                        type="file" 
+                        name="pdf_file" 
+                        accept=".pdf" 
+                        className="hidden" 
+                        id="pdf_edit" 
+                        onChange={(e) => {
+                          setEditPdfFile(e.target.files?.[0] || null);
+                          if (e.target.files?.[0]) setRemovePdf(false);
+                        }}
+                      />
+                      <label htmlFor="pdf_edit" className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl transition-all cursor-pointer ${editPdfFile ? 'border-emerald-500 bg-emerald-500/10' : removePdf ? 'border-red-500/30 bg-red-500/5 opacity-50' : 'border-zinc-800 hover:border-emerald-500/50 hover:bg-emerald-500/5'}`}>
+                        <Upload size={20} className={editPdfFile ? 'text-emerald-500 mb-2' : 'text-zinc-500 mb-2'} />
+                        <span className={`text-[10px] uppercase font-mono ${editPdfFile ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                          {editPdfFile ? editPdfFile.name : removePdf ? 'Archivo marcado para eliminación' : editingReport.file_url ? 'Cambiar PDF actual' : 'Seleccionar nuevo PDF'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-mono text-zinc-500 uppercase">Actualizar Editable (Opcional)</label>
+                      {(editingReport.editable_url || editEditableFile) && !removeEditable && (
+                        <button 
+                          type="button"
+                          onClick={() => { setRemoveEditable(true); setEditEditableFile(null); }}
+                          className="text-[9px] font-mono text-red-500 hover:text-red-400 uppercase"
+                        >
+                          Eliminar archivo actual
+                        </button>
+                      )}
+                      {removeEditable && (
+                        <button 
+                          type="button"
+                          onClick={() => setRemoveEditable(false)}
+                          className="text-[9px] font-mono text-emerald-500 hover:text-emerald-400 uppercase"
+                        >
+                          Restaurar original
+                        </button>
+                      )}
+                    </div>
+                    <div 
+                      className="relative group/file"
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const file = e.dataTransfer.files?.[0];
+                        const allowedTypes = [
+                          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                          'application/msword',
+                          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                          'application/vnd.ms-powerpoint'
+                        ];
+                        if (file && (allowedTypes.includes(file.type) || file.name.endsWith('.doc') || file.name.endsWith('.docx') || file.name.endsWith('.ppt') || file.name.endsWith('.pptx'))) {
+                          setEditEditableFile(file);
+                          setRemoveEditable(false);
+                        }
+                      }}
+                    >
+                      <input 
+                        type="file" 
+                        name="editable_file" 
+                        accept=".doc,.docx,.ppt,.pptx" 
+                        className="hidden" 
+                        id="editable_edit" 
+                        onChange={(e) => {
+                          setEditEditableFile(e.target.files?.[0] || null);
+                          if (e.target.files?.[0]) setRemoveEditable(false);
+                        }}
+                      />
+                      <label htmlFor="editable_edit" className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-xl transition-all cursor-pointer ${editEditableFile ? 'border-blue-500 bg-blue-500/10' : removeEditable ? 'border-red-500/30 bg-red-500/5 opacity-50' : 'border-zinc-800 hover:border-blue-500/50 hover:bg-blue-500/5'}`}>
+                        <Upload size={20} className={editEditableFile ? 'text-blue-500 mb-2' : 'text-zinc-500 mb-2'} />
+                        <span className={`text-[10px] uppercase font-mono ${editEditableFile ? 'text-blue-400' : 'text-zinc-500'}`}>
+                          {editEditableFile ? editEditableFile.name : removeEditable ? 'Archivo marcado para eliminación' : editingReport.editable_url ? 'Cambiar Editable actual' : 'Seleccionar nuevo Editable'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-bold py-3 rounded-xl transition-all">
+                Guardar Cambios
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {showSectorModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-sm bg-[#0d0d0d] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
+          >
+            <div className="p-6 border-b border-zinc-800 flex justify-between items-center">
+              <h3 className="text-lg font-bold">Nuevo Sector</h3>
+              <button onClick={() => setShowSectorModal(false)} className="text-zinc-500 hover:text-zinc-100">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateSector} className="p-8 space-y-6">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono text-zinc-500 uppercase">Nombre del Sector</label>
+                <input name="name" required className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50" />
+              </div>
+              <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-black font-bold py-3 rounded-xl transition-all">
+                Crear Sector
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {showLinkModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] flex items-center justify-center p-6">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md bg-[#0d0d0d] border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
+          >
+            <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
+              <h3 className="text-sm font-bold">Vincular Alerta a Informe</h3>
+              <button onClick={() => setShowLinkModal(false)} className="text-zinc-500 hover:text-zinc-100">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-4 max-h-[400px] overflow-y-auto space-y-2">
+              {availableAlerts.map(alert => (
+                <button
+                  key={alert.id}
+                  onClick={() => handleLinkAlert(alert.id)}
+                  className="w-full text-left p-3 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-emerald-500/50 transition-all group"
+                >
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${SEVERITY_COLORS[alert.severity as keyof typeof SEVERITY_COLORS]?.split(' ')[0] || 'bg-zinc-500'}`}></span>
+                      <span className="text-xs font-medium text-zinc-300 group-hover:text-emerald-400">{alert.title}</span>
+                    </div>
+                    <span className="text-[8px] font-mono text-zinc-600 uppercase">{alert.severity}</span>
+                  </div>
+                </button>
+              ))}
+              {availableAlerts.length === 0 && (
+                <p className="text-center py-8 text-xs text-zinc-600 italic">No hay alertas disponibles para vincular.</p>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UserManagement({ clients }: { clients: Client[] }) {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newUser, setNewUser] = useState({ username: '', email: '', role: 'analyst', client_id: '' });
+  const [newUser, setNewUser] = useState({ username: '', email: '', role: 'admin', client_id: '' });
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [selectedUserLogs, setSelectedUserLogs] = useState<any[] | null>(null);
 
@@ -3061,7 +5056,7 @@ function UserManagement({ clients }: { clients: Client[] }) {
                 onChange={(e) => setNewUser({...newUser, role: e.target.value})}
                 className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-emerald-500/50 text-zinc-300"
               >
-                <option value="analyst">Analista</option>
+                <option value="admin">Administrador</option>
                 <option value="client">Cliente</option>
                 <option value="super_admin">Super Admin</option>
               </select>

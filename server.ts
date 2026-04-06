@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from "uuid";
 import ipaddr from "ipaddr.js";
 import fs from "fs";
 import crypto from "crypto";
+import multer from "multer";
 
 // Cargar variables de entorno desde .env
 dotenv.config();
@@ -17,6 +18,28 @@ dotenv.config();
 // Utilidades para manejar rutas en módulos ES
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Multer configuration for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+});
 
 // Inicialización de la base de datos local
 const db = new Database("surveillance.db");
@@ -122,7 +145,7 @@ db.exec(`
     username TEXT NOT NULL UNIQUE,
     email TEXT,
     password TEXT NOT NULL,
-    role TEXT NOT NULL, -- 'super_admin', 'analyst', 'client'
+    role TEXT NOT NULL, -- 'super_admin', 'admin', 'client'
     client_id INTEGER,
     status TEXT DEFAULT 'active', -- 'active', 'inactive'
     is_temp_password INTEGER DEFAULT 0,
@@ -161,6 +184,16 @@ db.exec(`
     content TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (alert_id) REFERENCES alerts(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS takedown_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    takedown_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (takedown_id) REFERENCES takedowns(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
@@ -314,7 +347,78 @@ db.exec(`
     details TEXT, -- JSON string
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS takedowns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id INTEGER,
+    client_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    target_url TEXT,
+    scenario TEXT NOT NULL, -- 'domain', 'phishing', 'subdomain', 'impersonation', 'social', 'mobile_app', 'post_ad', 'messaging'
+    status TEXT DEFAULT 'validation', -- 'validation', 'evaluation', 'request', 'follow_up', 'resolved', 'rejected'
+    priority TEXT DEFAULT 'medium', -- 'low', 'medium', 'high', 'critical'
+    evidence TEXT, -- JSON array of evidence (captures, logs, etc.)
+    platform_contacted TEXT,
+    request_date DATETIME,
+    resolution_date DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (alert_id) REFERENCES alerts(id),
+    FOREIGN KEY (client_id) REFERENCES clients(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER, -- NULL for public reports
+    sector_id INTEGER, -- NULL for non-sectorial reports
+    title TEXT NOT NULL,
+    description TEXT,
+    category TEXT NOT NULL, -- 'Tendencias', 'Sectoriales', etc.
+    subtype TEXT, -- 'Informe Técnico', 'Informe Ejecutivo', etc.
+    type TEXT NOT NULL, -- 'public' or 'private'
+    file_url TEXT, -- PDF
+    editable_url TEXT, -- Word/PPT
+    created_by TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (client_id) REFERENCES clients(id),
+    FOREIGN KEY (sector_id) REFERENCES sectors(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS sectors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS alert_reports (
+    alert_id INTEGER NOT NULL,
+    report_id INTEGER NOT NULL,
+    PRIMARY KEY (alert_id, report_id),
+    FOREIGN KEY (alert_id) REFERENCES alerts(id) ON DELETE CASCADE,
+    FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
+  );
 `);
+
+// Migración manual: Añadir columnas a reports si no existen
+const columnsToMigrate = [
+  { table: 'reports', name: 'sector_id', type: 'INTEGER REFERENCES sectors(id)' },
+  { table: 'reports', name: 'client_id', type: 'INTEGER REFERENCES clients(id)' },
+  { table: 'reports', name: 'subtype', type: 'TEXT' },
+  { table: 'reports', name: 'editable_url', type: 'TEXT' },
+  { table: 'takedowns', name: 'priority', type: "TEXT DEFAULT 'medium'" }
+];
+
+columnsToMigrate.forEach(col => {
+  try {
+    db.prepare(`ALTER TABLE ${col.table} ADD COLUMN ${col.name} ${col.type}`).run();
+    console.log(`[SYSTEM] Columna '${col.name}' añadida a la tabla '${col.table}'.`);
+  } catch (e: any) {
+    if (!e.message.includes("duplicate column name")) {
+      console.error(`[SYSTEM] Error al migrar '${col.name}' en '${col.table}':`, e.message);
+    }
+  }
+});
 
   // Inserción de datos iniciales (Seeding)
   const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
@@ -330,6 +434,109 @@ db.exec(`
     insertUser.run(adminUser, adminEmail, adminPass, "super_admin", null, 1);
     console.log(`[SYSTEM] Usuario Super Admin '${adminUser}' creado con contraseña temporal.`);
     console.log("[SYSTEM] Por favor, cambie la contraseña tras el primer inicio de sesión.");
+  }
+
+  // Generación de datos de prueba para alertas
+  const alertCount = db.prepare("SELECT COUNT(*) as count FROM alerts").get() as { count: number };
+  if (alertCount.count === 0) {
+    console.log("[SYSTEM] No hay alertas en el sistema. Generando datos de prueba...");
+    
+    // Asegurar que existe al menos un cliente
+    let clientId: number | bigint;
+    const client = db.prepare("SELECT id FROM clients LIMIT 1").get() as { id: number } | undefined;
+    
+    if (!client) {
+      const insertClient = db.prepare("INSERT INTO clients (name, code) VALUES (?, ?)");
+      clientId = insertClient.run("Empresa Demo CTI", "DEMO01").lastInsertRowid;
+      console.log("[SYSTEM] Cliente de prueba 'Empresa Demo CTI' creado.");
+    } else {
+      clientId = client.id;
+    }
+
+    const categories = [
+      "Exposicion de informacion",
+      "Fugas de credenciales",
+      "Exposicion de sistemas y vulnerabilidades",
+      "Monitorizacion de dominios",
+      "Monitorizacion Web / Defacement",
+      "Listas de categorizacion",
+      "Contenidos ofensivos",
+      "Abuso y suplantacion de marca",
+      "Fraude de aplicaciones",
+      "Exposicion Bancaria y carding"
+    ];
+
+    const severities = ["low", "medium", "high", "critical"];
+    const insertAlert = db.prepare(`
+      INSERT INTO alerts (client_id, client_alert_id, category, title, description, severity, status, source) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    categories.forEach((cat, index) => {
+      // Crear 2 alertas por categoría con diferentes severidades y estados
+      insertAlert.run(
+        clientId, 
+        index * 2 + 1, 
+        cat, 
+        `Detección de ${cat} - Incidente A`, 
+        `Se ha detectado una anomalía relacionada con ${cat}. Se recomienda revisión inmediata de los activos afectados.`, 
+        severities[index % 4],
+        'new',
+        'Sentinel Engine'
+      );
+
+      insertAlert.run(
+        clientId, 
+        index * 2 + 2, 
+        cat, 
+        `Análisis preventivo: ${cat}`, 
+        `Informe detallado sobre la exposición en la categoría ${cat}. Los indicadores muestran un riesgo potencial moderado.`, 
+        severities[(index + 1) % 4],
+        'in_progress',
+        'External Intelligence'
+      );
+    });
+
+    console.log("[SYSTEM] Se han generado 20 alertas de prueba en todas las categorías.");
+  }
+
+  // Generación de datos de prueba para informes (Gestión Documental)
+  const reportCount = db.prepare("SELECT COUNT(*) as count FROM reports").get() as { count: number };
+  if (reportCount.count === 0) {
+    console.log("[SYSTEM] No hay informes en el sistema. Generando datos de prueba...");
+    
+    const client = db.prepare("SELECT id FROM clients LIMIT 1").get() as { id: number } | undefined;
+    const clientId = client ? client.id : null;
+
+    const insertReport = db.prepare(`
+      INSERT INTO reports (client_id, title, description, category, type, file_url, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    // Informes Públicos
+    insertReport.run(null, "Tendencias de Ransomware Q1 2026", "Análisis detallado de las principales variantes de ransomware observadas en el primer trimestre.", "Tendencias", "public", "https://example.com/reports/ransomware-q1-2026.pdf", "admin");
+    insertReport.run(null, "Informe Sectorial: Banca y Finanzas", "Estado de la ciberseguridad en el sector financiero global y amenazas emergentes.", "Sectorial", "public", "https://example.com/reports/sectorial-banca.pdf", "admin");
+    insertReport.run(null, "Perfil de Actor: APT-29 (Cozy Bear)", "Actualización sobre las tácticas, técnicas y procedimientos (TTPs) de APT-29.", "Perfil Actor Amenaza", "public", "https://example.com/reports/apt29-profile.pdf", "admin");
+    insertReport.run(null, "Campaña de Phishing: Falsas Notificaciones de Correos", "Análisis de la campaña masiva de phishing suplantando servicios postales.", "Campañas", "public", "https://example.com/reports/phishing-correos.pdf", "admin");
+
+    // Informes Privados (si hay cliente)
+    if (clientId) {
+      insertReport.run(clientId, "Auditoría Técnica Mensual - Marzo 2026", "Resultados de la monitorización técnica y vulnerabilidades detectadas en sus activos.", "Informes Técnicos", "private", "https://example.com/reports/client-tech-mar-2026.pdf", "admin");
+      insertReport.run(clientId, "Resumen Ejecutivo de Ciberinteligencia", "Visión de alto nivel sobre el panorama de amenazas específico para su organización.", "Informes Ejecutivos", "private", "https://example.com/reports/client-exec-mar-2026.pdf", "admin");
+      insertReport.run(clientId, "Alerta Temprana: Fuga de Credenciales Detectada", "Notificación urgente sobre la detección de credenciales corporativas en foros de la Dark Web.", "Informe de alerta temprana", "private", "https://example.com/reports/alert-creds-leak.pdf", "admin");
+    }
+
+    console.log("[SYSTEM] Se han generado informes de prueba públicos y privados.");
+  }
+
+  // Generación de sectores iniciales
+  const sectorCount = db.prepare("SELECT COUNT(*) as count FROM sectors").get() as { count: number };
+  if (sectorCount.count === 0) {
+    console.log("[SYSTEM] No hay sectores en el sistema. Generando sectores por defecto...");
+    const insertSector = db.prepare("INSERT INTO sectors (name) VALUES (?)");
+    const defaultSectors = ["Banca y Finanzas", "Energía", "Salud", "Administración Pública", "Telecomunicaciones", "Retail"];
+    defaultSectors.forEach(name => insertSector.run(name));
+    console.log("[SYSTEM] Sectores por defecto creados.");
   }
 
   const providerCount = db.prepare("SELECT COUNT(*) as count FROM provider_configs").get() as { count: number };
@@ -730,7 +937,7 @@ async function startServer() {
     const username = req.headers["x-user"] || "admin";
     const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
     if (!user || !user.client_id) {
-      // For admins/analysts without a specific client, return all modules as active
+      // For admins without a specific client, return all modules as active
       return res.json({ modules: CATEGORIES.map(cat => ({ module_name: cat, is_active: 1 })) });
     }
     const modules = db.prepare("SELECT * FROM client_modules WHERE client_id = ?").all(user.client_id);
@@ -773,9 +980,18 @@ async function startServer() {
   });
 
   app.get("/api/alerts/:id", (req, res) => {
-    const alert = db.prepare("SELECT alerts.*, clients.name as client_name FROM alerts JOIN clients ON alerts.client_id = clients.id WHERE alerts.id = ?").get(req.params.id);
+    const alert = db.prepare("SELECT alerts.*, clients.name as client_name FROM alerts JOIN clients ON alerts.client_id = clients.id WHERE alerts.id = ?").get(req.params.id) as any;
     const comments = db.prepare("SELECT comments.*, users.username FROM comments JOIN users ON comments.user_id = users.id WHERE alert_id = ? ORDER BY created_at ASC").all(req.params.id);
-    res.json({ ...alert, comments });
+    
+    // Fetch linked reports for the alert
+    const linked_reports = db.prepare(`
+      SELECT reports.id, reports.title, reports.category, reports.type 
+      FROM reports 
+      JOIN alert_reports ON reports.id = alert_reports.report_id 
+      WHERE alert_reports.alert_id = ?
+    `).all(req.params.id);
+
+    res.json({ ...alert, comments, linked_reports });
   });
 
 // Mock email service
@@ -788,15 +1004,15 @@ app.patch("/api/alerts/:id", async (req, res) => {
     const { status, severity } = req.body;
     db.prepare("UPDATE alerts SET status = COALESCE(?, status), severity = COALESCE(?, severity) WHERE id = ?").run(status, severity, req.params.id);
     
-    // Create notification for analysts
+    // Create notification for admins
     const alert = db.prepare("SELECT title FROM alerts WHERE id = ?").get(req.params.id) as any;
-    const analysts = db.prepare("SELECT id, email FROM users WHERE role IN ('super_admin', 'analyst')").all() as any[];
+    const admins = db.prepare("SELECT id, email FROM users WHERE role IN ('super_admin', 'admin')").all() as any[];
     const insertNotify = db.prepare("INSERT INTO notifications (user_id, title, message, type) VALUES (?, ?, ?, ?)");
     
-    for (const analyst of analysts) {
-      insertNotify.run(analyst.id, "Alerta Actualizada", `La alerta "${alert.title}" ha sido actualizada.`, 'alert_update');
-      if (analyst.email) {
-        await sendEmailNotification(analyst.email, "VIGILANCIA_CTI: Alerta Actualizada", `La alerta "${alert.title}" ha sido actualizada a estado ${status || 'sin cambios'} y severidad ${severity || 'sin cambios'}.`);
+    for (const admin of admins) {
+      insertNotify.run(admin.id, "Alerta Actualizada", `La alerta "${alert.title}" ha sido actualizada.`, 'alert_update');
+      if (admin.email) {
+        await sendEmailNotification(admin.email, "VIGILANCIA_CTI: Alerta Actualizada", `La alerta "${alert.title}" ha sido actualizada a estado ${status || 'sin cambios'} y severidad ${severity || 'sin cambios'}.`);
       }
     }
 
@@ -807,6 +1023,192 @@ app.patch("/api/alerts/:id", async (req, res) => {
     const { content, user_id } = req.body;
     const result = db.prepare("INSERT INTO comments (alert_id, user_id, content) VALUES (?, ?, ?)").run(req.params.id, user_id, content);
     res.json({ id: result.lastInsertRowid, content, created_at: new Date().toISOString() });
+  });
+
+  // --- TAKEDOWNS API ---
+  app.get("/api/takedowns", (req, res) => {
+    const username = req.headers["x-user"] || "admin";
+    const currentUser = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
+    if (!currentUser) return res.status(401).json({ error: "Unauthorized" });
+
+    let query = "SELECT takedowns.*, clients.name as client_name FROM takedowns JOIN clients ON takedowns.client_id = clients.id";
+    const params: any[] = [];
+    if (currentUser.role === 'client') {
+      query += " WHERE takedowns.client_id = ?";
+      params.push(currentUser.client_id);
+    }
+
+    query += " ORDER BY created_at DESC";
+    const takedowns = db.prepare(query).all(...params);
+    res.json(takedowns);
+  });
+
+  app.get("/api/takedowns/:id", (req, res) => {
+    const takedown = db.prepare("SELECT takedowns.*, clients.name as client_name FROM takedowns JOIN clients ON takedowns.client_id = clients.id WHERE takedowns.id = ?").get(req.params.id) as any;
+    if (!takedown) return res.status(404).json({ error: "Takedown not found" });
+    
+    const comments = db.prepare("SELECT takedown_comments.*, users.username FROM takedown_comments JOIN users ON takedown_comments.user_id = users.id WHERE takedown_id = ? ORDER BY created_at ASC").all(req.params.id);
+    
+    res.json({ ...takedown, comments });
+  });
+
+  app.post("/api/takedowns", (req, res) => {
+    const { alert_id, client_id, title, description, target_url, scenario, priority } = req.body;
+    const result = db.prepare(`
+      INSERT INTO takedowns (alert_id, client_id, title, description, target_url, scenario, priority)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(alert_id, client_id, title, description, target_url, scenario, priority);
+    
+    res.json({ id: result.lastInsertRowid, success: true });
+  });
+
+  app.patch("/api/takedowns/:id", (req, res) => {
+    const { status, platform_contacted, request_date, resolution_date, description, priority } = req.body;
+    db.prepare(`
+      UPDATE takedowns 
+      SET status = COALESCE(?, status),
+          platform_contacted = COALESCE(?, platform_contacted),
+          request_date = COALESCE(?, request_date),
+          resolution_date = COALESCE(?, resolution_date),
+          description = COALESCE(?, description),
+          priority = COALESCE(?, priority),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(status, platform_contacted, request_date, resolution_date, description, priority, req.params.id);
+    res.json({ success: true });
+  });
+
+  app.post("/api/takedowns/:id/comments", (req, res) => {
+    const { content, user_id } = req.body;
+    const result = db.prepare("INSERT INTO takedown_comments (takedown_id, user_id, content) VALUES (?, ?, ?)").run(req.params.id, user_id, content);
+    res.json({ id: result.lastInsertRowid, content, created_at: new Date().toISOString() });
+  });
+
+  // --- REPORTS API ---
+  app.get("/api/reports", (req, res) => {
+    const username = req.headers["x-user"] || "admin";
+    const currentUser = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
+    if (!currentUser) return res.status(401).json({ error: "Unauthorized" });
+
+    let query = `
+      SELECT reports.*, clients.name as client_name, sectors.name as sector_name
+      FROM reports 
+      LEFT JOIN clients ON reports.client_id = clients.id
+      LEFT JOIN sectors ON reports.sector_id = sectors.id
+    `;
+    const params: any[] = [];
+
+    if (currentUser.role === 'client') {
+      query += " WHERE reports.type = 'public' OR reports.client_id = ?";
+      params.push(currentUser.client_id);
+    }
+
+    query += " ORDER BY created_at DESC";
+    const reports = db.prepare(query).all(...params) as any[];
+    
+    // Fetch linked alerts for each report
+    for (const report of reports) {
+      report.linked_alerts = db.prepare(`
+        SELECT alerts.id, alerts.title, alerts.severity 
+        FROM alerts 
+        JOIN alert_reports ON alerts.id = alert_reports.alert_id 
+        WHERE alert_reports.report_id = ?
+      `).all(report.id);
+    }
+
+    res.json(reports);
+  });
+
+  app.post("/api/reports", (req, res) => {
+    const { client_id, sector_id, title, description, category, subtype, type, file_url, editable_url, created_by } = req.body;
+    const result = db.prepare(`
+      INSERT INTO reports (client_id, sector_id, title, description, category, subtype, type, file_url, editable_url, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(client_id || null, sector_id || null, title, description, category, subtype || null, type, file_url, editable_url || null, created_by);
+    
+    res.json({ id: result.lastInsertRowid, success: true });
+  });
+
+  app.patch("/api/reports/:id", (req, res) => {
+    const { client_id, sector_id, title, description, category, subtype, type, file_url, editable_url } = req.body;
+    db.prepare(`
+      UPDATE reports SET 
+        client_id = COALESCE(?, client_id),
+        sector_id = ?,
+        title = COALESCE(?, title),
+        description = COALESCE(?, description),
+        category = COALESCE(?, category),
+        subtype = ?,
+        type = COALESCE(?, type),
+        file_url = COALESCE(?, file_url),
+        editable_url = ?
+      WHERE id = ?
+    `).run(
+      client_id || null, 
+      sector_id || null, 
+      title, 
+      description, 
+      category, 
+      subtype || null, 
+      type, 
+      file_url, 
+      editable_url || null, 
+      req.params.id
+    );
+    res.json({ success: true });
+  });
+
+  app.delete("/api/reports/:id", (req, res) => {
+    db.prepare("DELETE FROM reports WHERE id = ?").run(req.params.id);
+    res.json({ success: true });
+  });
+
+  // --- SECTORS API ---
+  app.get("/api/sectors", (req, res) => {
+    const sectors = db.prepare("SELECT * FROM sectors ORDER BY name ASC").all();
+    res.json(sectors);
+  });
+
+  app.post("/api/sectors", (req, res) => {
+    const { name } = req.body;
+    try {
+      const result = db.prepare("INSERT INTO sectors (name) VALUES (?)").run(name);
+      res.json({ id: result.lastInsertRowid, name, success: true });
+    } catch (e) {
+      res.status(400).json({ error: "Sector already exists" });
+    }
+  });
+
+  // --- UPLOAD API ---
+  app.post("/api/upload", (req: any, res, next) => {
+    upload.single('file')(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({ error: `Multer error: ${err.message}` });
+      } else if (err) {
+        return res.status(500).json({ error: `Unknown upload error: ${err.message}` });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      
+      res.json({ url: `/uploads/${req.file.filename}` });
+    });
+  });
+
+  app.post("/api/reports/:id/links", (req, res) => {
+    const { alert_id } = req.body;
+    try {
+      db.prepare("INSERT INTO alert_reports (alert_id, report_id) VALUES (?, ?)").run(alert_id, req.params.id);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(400).json({ error: "Link already exists or invalid IDs" });
+    }
+  });
+
+  app.delete("/api/reports/:id/links/:alert_id", (req, res) => {
+    db.prepare("DELETE FROM alert_reports WHERE alert_id = ? AND report_id = ?").run(req.params.alert_id, req.params.id);
+    res.json({ success: true });
   });
 
   app.get("/api/clients/:id/config", (req, res) => {
@@ -1235,7 +1637,7 @@ app.patch("/api/alerts/:id", async (req, res) => {
     const user = db.prepare("SELECT id FROM users WHERE username = ?").get(username) as any;
     if (!user) return res.status(401).json({ error: "Unauthorized" });
     const config = db.prepare("SELECT config FROM user_dashboard_config WHERE user_id = ?").get(user.id) as any;
-    res.json(config ? JSON.parse(config.config) : { widgets: ['summary', 'trends', 'recent_alerts'] });
+    res.json(config ? JSON.parse(config.config) : { widgets: ['summary', 'trends', 'recent_alerts', 'severity_dist', 'threat_level', 'top_assets', 'takedowns_summary', 'connectors_status'] });
   });
 
   app.post("/api/dashboard/config", (req, res) => {
@@ -1540,6 +1942,18 @@ app.patch("/api/alerts/:id", async (req, res) => {
       `Procesadas ${accepted} alertas con éxito. Rechazadas: ${rejected}. Duplicadas: ${duplicates}.`,
       trace_id
     );
+  });
+
+  // Serve uploaded files
+  app.use('/uploads', express.static(uploadsDir));
+
+  // Error handler global para asegurar que todos los errores devuelvan JSON
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('[SYSTEM] Error no manejado:', err);
+    res.status(err.status || 500).json({
+      error: err.message || "Error interno del servidor",
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   });
 
   app.listen(Number(PORT), "0.0.0.0", () => {
