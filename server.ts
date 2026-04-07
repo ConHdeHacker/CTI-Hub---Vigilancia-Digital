@@ -46,7 +46,8 @@ const db = new Database("surveillance.db");
 
 // Determinar el modo de la aplicación (development | production)
 const APP_MODE = process.env.APP_MODE || 'development';
-console.log(`[SYSTEM] Iniciando en modo: ${APP_MODE}`);
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
+console.log(`[SYSTEM] Iniciando en modo: ${APP_MODE} (Demo: ${DEMO_MODE})`);
 
 /**
  * Gestor de Secretos (Simulación de Vault/AWS SM)
@@ -540,6 +541,66 @@ columnsToMigrate.forEach(col => {
     insertLog.run('warn', 'auth', 'Intento de login fallido para usuario: root');
     insertLog.run('error', 'connector', 'Error de conexión con AbuseIPDB: Timeout');
     insertLog.run('debug', 'db', 'Query optimizada: SELECT * FROM alerts WHERE status = "new"');
+  }
+
+  // --- DEMO DATA GENERATION ---
+  if (DEMO_MODE) {
+    const alertCount = db.prepare("SELECT COUNT(*) as count FROM alerts").get() as { count: number };
+    if (alertCount.count === 0) {
+      console.log("[SYSTEM] Generando datos de prueba (DEMO_MODE)...");
+      
+      // 1. Clientes y Usuarios de prueba
+      const clientId = db.prepare("INSERT INTO clients (name, sector_id) VALUES (?, ?)").run("Corporación Demo", 1).lastInsertRowid;
+      db.prepare("INSERT INTO users (username, password, role, client_id) VALUES (?, ?, ?, ?)").run("demo", "demo123", "client", clientId);
+
+      // 2. Conectores de prueba
+      const connId = db.prepare(`
+        INSERT INTO connectors (name, type, config, status) 
+        VALUES (?, ?, ?, ?)
+      `).run("Sentinel Demo", "webhook", JSON.stringify({ endpoint: "/v1/ingest/sentinel", secret: "demo-secret" }), "active").lastInsertRowid;
+
+      // 3. Alertas de prueba
+      const insertAlert = db.prepare(`
+        INSERT INTO alerts (client_id, connector_id, scenario, severity, status, title, description, raw_payload)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const scenarios = ["Fugas de credenciales", "Exposicion de informacion", "Monitorizacion de dominios"];
+      const severities = ["low", "medium", "high", "critical"];
+      const statuses = ["new", "in_progress", "closed"];
+
+      for (let i = 1; i <= 20; i++) {
+        insertAlert.run(
+          clientId,
+          connId,
+          scenarios[i % scenarios.length],
+          severities[i % severities.length],
+          statuses[i % statuses.length],
+          `Alerta de Prueba #${i}`,
+          `Esta es una descripción detallada para la alerta de prueba número ${i}.`,
+          JSON.stringify({ test: true, id: i })
+        );
+      }
+
+      // 4. Takedowns de prueba
+      const insertTakedown = db.prepare(`
+        INSERT INTO takedowns (client_id, alert_id, status, priority, target_url, reason)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+
+      for (let i = 1; i <= 5; i++) {
+        insertTakedown.run(
+          clientId,
+          i, // alert_id
+          "requested",
+          "high",
+          `https://phishing-demo-${i}.com`,
+          "Suplantación de identidad detectada en portal de login."
+        );
+      }
+
+      console.log("[SYSTEM] Datos de prueba generados con éxito.");
+    }
   }
 
 const CATEGORIES = [
