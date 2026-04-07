@@ -4,9 +4,11 @@ module.exports = {
       name: 'vigilancia-cti',
       script: 'server.ts',
       interpreter: 'node',
-      interpreter_args: '--no-warnings',
+      interpreter_args: '--import tsx',
       env: {
         NODE_ENV: 'production',
+        APP_MODE: 'production',
+        PORT: 3000
       },
       instances: 1,
       autorestart: true,

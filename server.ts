@@ -306,33 +306,6 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
-  CREATE TABLE IF NOT EXISTS provider_configs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_key TEXT UNIQUE NOT NULL,
-    display_name TEXT NOT NULL,
-    enabled INTEGER DEFAULT 0,
-    provider_type TEXT NOT NULL, -- 'dnsbl', 'feed', 'api', 'webhook'
-    endpoint TEXT NOT NULL,
-    auth_type TEXT DEFAULT 'none',
-    auth_payload TEXT DEFAULT '{}', -- JSON string
-    fetch_interval_seconds INTEGER,
-    ttl_seconds INTEGER DEFAULT 86400,
-    last_fetched_at DATETIME,
-    last_hash TEXT,
-    config_json TEXT DEFAULT '{}', -- JSON string
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS provider_config_audit (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    provider_key TEXT NOT NULL,
-    changed_by TEXT,
-    old_value TEXT,
-    new_value TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
   CREATE TABLE IF NOT EXISTS system_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
@@ -537,58 +510,6 @@ columnsToMigrate.forEach(col => {
     const defaultSectors = ["Banca y Finanzas", "Energía", "Salud", "Administración Pública", "Telecomunicaciones", "Retail"];
     defaultSectors.forEach(name => insertSector.run(name));
     console.log("[SYSTEM] Sectores por defecto creados.");
-  }
-
-  const providerCount = db.prepare("SELECT COUNT(*) as count FROM provider_configs").get() as { count: number };
-  if (providerCount.count === 0) {
-    const insertProvider = db.prepare(`
-      INSERT INTO provider_configs (provider_key, display_name, enabled, provider_type, endpoint, auth_type, auth_payload, config_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    insertProvider.run(
-      'urlhaus', 
-      'URLHaus (feed)', 
-      1, 
-      'feed', 
-      'https://urlhaus.abuse.ch/downloads/csv/', 
-      'none', 
-      '{}', 
-      JSON.stringify({ csv_columns: ["timestamp", "url", "md5", "domain"], date_format: "iso" })
-    );
-
-    insertProvider.run(
-      'abuseipdb', 
-      'AbuseIPDB (API)', 
-      0, 
-      'api', 
-      'https://api.abuseipdb.com/api/v2/check', 
-      'api_key', 
-      JSON.stringify({ api_key: "" }), 
-      JSON.stringify({ rate_limit_per_minute: 60 })
-    );
-
-    insertProvider.run(
-      'otx', 
-      'OTX (API)', 
-      0, 
-      'api', 
-      'https://otx.alienvault.com/api/v1/indicators/', 
-      'api_key', 
-      JSON.stringify({ api_key: "" }), 
-      '{}'
-    );
-
-    insertProvider.run(
-      'spamhaus_dnsbl', 
-      'Spamhaus ZEN', 
-      0, 
-      'dnsbl', 
-      'zen.spamhaus.org', 
-      'none', 
-      '{}', 
-      JSON.stringify({ force_license_ack: false })
-    );
   }
 
   const settingsCount = db.prepare("SELECT COUNT(*) as count FROM system_settings").get() as { count: number };
@@ -1647,104 +1568,6 @@ app.patch("/api/alerts/:id", async (req, res) => {
     if (!user) return res.status(401).json({ error: "Unauthorized" });
     db.prepare("INSERT OR REPLACE INTO user_dashboard_config (user_id, config) VALUES (?, ?)").run(user.id, JSON.stringify(config));
     res.json({ success: true });
-  });
-
-  // Categorization Connector API
-  app.get("/api/connectors/categorization/providers", (req, res) => {
-    const providers = db.prepare("SELECT * FROM provider_configs").all();
-    res.json(providers.map((p: any) => ({
-      ...p,
-      enabled: p.enabled === 1,
-      auth_payload: JSON.parse(p.auth_payload),
-      config_json: JSON.parse(p.config_json)
-    })));
-  });
-
-  app.post("/api/connectors/categorization/providers", (req, res) => {
-    const { provider_key, display_name, enabled, provider_type, endpoint, auth_type, auth_payload, fetch_interval_seconds, ttl_seconds, config_json } = req.body;
-    try {
-      db.prepare(`
-        INSERT INTO provider_configs (provider_key, display_name, enabled, provider_type, endpoint, auth_type, auth_payload, fetch_interval_seconds, ttl_seconds, config_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        provider_key, 
-        display_name, 
-        enabled ? 1 : 0, 
-        provider_type, 
-        endpoint, 
-        auth_type, 
-        JSON.stringify(auth_payload || {}), 
-        fetch_interval_seconds, 
-        ttl_seconds, 
-        JSON.stringify(config_json || {})
-      );
-      res.json({ success: true });
-    } catch (e: any) {
-      res.status(400).json({ error: e.message });
-    }
-  });
-
-  app.put("/api/connectors/categorization/providers/:key", (req, res) => {
-    const { display_name, enabled, endpoint, auth_type, auth_payload, fetch_interval_seconds, ttl_seconds, config_json } = req.body;
-    const provider_key = req.params.key;
-    
-    // Audit log (simplified)
-    const old = db.prepare("SELECT * FROM provider_configs WHERE provider_key = ?").get(provider_key) as any;
-    if (old) {
-      db.prepare("INSERT INTO provider_config_audit (provider_key, old_value, new_value) VALUES (?, ?, ?)")
-        .run(provider_key, JSON.stringify(old), JSON.stringify(req.body));
-    }
-
-    db.prepare(`
-      UPDATE provider_configs SET
-        display_name = COALESCE(?, display_name),
-        enabled = COALESCE(?, enabled),
-        endpoint = COALESCE(?, endpoint),
-        auth_type = COALESCE(?, auth_type),
-        auth_payload = COALESCE(?, auth_payload),
-        fetch_interval_seconds = COALESCE(?, fetch_interval_seconds),
-        ttl_seconds = COALESCE(?, ttl_seconds),
-        config_json = COALESCE(?, config_json),
-        updated_at = CURRENT_TIMESTAMP
-      WHERE provider_key = ?
-    `).run(
-      display_name,
-      enabled !== undefined ? (enabled ? 1 : 0) : null,
-      endpoint,
-      auth_type,
-      auth_payload ? JSON.stringify(auth_payload) : null,
-      fetch_interval_seconds,
-      ttl_seconds,
-      config_json ? JSON.stringify(config_json) : null,
-      provider_key
-    );
-    res.json({ success: true });
-  });
-
-  app.post("/api/connectors/categorization/reload", (req, res) => {
-    // Simulate reload
-    res.json({ status: "success", timestamp: new Date().toISOString() });
-  });
-
-  app.get("/api/connectors/categorization/providers/:key/config", (req, res) => {
-    const provider = db.prepare("SELECT * FROM provider_configs WHERE provider_key = ?").get(req.params.key) as any;
-    if (!provider) return res.status(404).json({ error: "Not found" });
-    
-    const config = {
-      ...provider,
-      enabled: provider.enabled === 1,
-      auth_payload: JSON.parse(provider.auth_payload),
-      config_json: JSON.parse(provider.config_json)
-    };
-
-    // Mask sensitive data
-    if (config.auth_payload) {
-      Object.keys(config.auth_payload).forEach(k => {
-        config.auth_payload[k] = "********";
-      });
-    }
-
-    res.json(config);
   });
 
   // System Settings API
