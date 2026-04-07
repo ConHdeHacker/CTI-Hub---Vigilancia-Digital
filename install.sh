@@ -18,11 +18,26 @@ if ! command -v npm &> /dev/null; then
     exit 1
 fi
 
+if ! command -v make &> /dev/null; then
+    echo "Error: No se detectaron herramientas de compilación (make)."
+    echo "Por favor, instálelas ejecutando: sudo apt update && sudo apt install build-essential -y"
+    exit 1
+fi
+
 # 2. Configuración de Entorno (Aislamiento)
 echo "[1/6] Configurando entorno..."
 # En Node.js, el aislamiento se logra mediante node_modules locales.
 # Aseguramos que no haya restos de instalaciones previas.
 rm -rf node_modules package-lock.json
+
+# Opción para limpiar base de datos
+if [ -f surveillance.db ]; then
+    read -p "¿Desea eliminar la base de datos actual para una instalación limpia? (s/n) [n]: " RESET_DB
+    if [[ "$RESET_DB" =~ ^([sS][iI]|[sS])$ ]]; then
+        echo "Eliminando base de datos actual..."
+        rm surveillance.db
+    fi
+fi
 
 # 3. Instalación de Dependencias
 echo "[2/6] Instalando dependencias (esto puede tardar un poco)..."

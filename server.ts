@@ -412,8 +412,8 @@ columnsToMigrate.forEach(col => {
 
   // Generación de datos de prueba para alertas
   const alertCount = db.prepare("SELECT COUNT(*) as count FROM alerts").get() as { count: number };
-  if (alertCount.count === 0) {
-    console.log("[SYSTEM] No hay alertas en el sistema. Generando datos de prueba...");
+  if (DEMO_MODE && alertCount.count === 0) {
+    console.log("[SYSTEM] Generando alertas de prueba (DEMO_MODE)...");
     
     // Asegurar que existe al menos un cliente
     let clientId: number | bigint;
@@ -476,8 +476,8 @@ columnsToMigrate.forEach(col => {
 
   // Generación de datos de prueba para informes (Gestión Documental)
   const reportCount = db.prepare("SELECT COUNT(*) as count FROM reports").get() as { count: number };
-  if (reportCount.count === 0) {
-    console.log("[SYSTEM] No hay informes en el sistema. Generando datos de prueba...");
+  if (DEMO_MODE && reportCount.count === 0) {
+    console.log("[SYSTEM] Generando informes de prueba (DEMO_MODE)...");
     
     const client = db.prepare("SELECT id FROM clients LIMIT 1").get() as { id: number } | undefined;
     const clientId = client ? client.id : null;
@@ -534,7 +534,7 @@ columnsToMigrate.forEach(col => {
   }
 
   const logsCount = db.prepare("SELECT COUNT(*) as count FROM system_logs").get() as { count: number };
-  if (logsCount.count === 0) {
+  if (DEMO_MODE && logsCount.count === 0) {
     const insertLog = db.prepare("INSERT INTO system_logs (level, component, message) VALUES (?, ?, ?)");
     insertLog.run('info', 'system', 'Sistema iniciado correctamente');
     insertLog.run('info', 'connector', 'Conector URLHaus sincronizado: 1250 nuevos indicadores');
