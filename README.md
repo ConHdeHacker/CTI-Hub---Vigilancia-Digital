@@ -77,10 +77,31 @@ Para asegurar que la aplicación sobreviva a reinicios del servidor:
 - `pm2 status`: Ver estado de la aplicación.
 - `pm2 logs vigilancia-cti`: Ver logs en tiempo real.
 - `pm2 restart vigilancia-cti`: Reiniciar la aplicación.
-
----
-
-## 📁 Estructura del Proyecto
+ 
+ ---
+ 
++## 🔄 Actualización desde GitHub
++
++Para actualizar la aplicación a la última versión disponible en el repositorio sin perder tus datos:
++
++1. **Ejecutar el script de actualización**:
++   ```bash
++   chmod +x update.sh
++   ./update.sh
++   ```
++
++Este script automatizado realiza los siguientes pasos:
++- Crea un **backup de seguridad** de tu base de datos actual (`surveillance.db`).
++- Descarga los últimos cambios del repositorio (`git pull`).
++- Instala nuevas dependencias si las hubiera (`npm install`).
++- Re-compila el frontend (`npm run build`).
++- Reinicia el proceso en **PM2** para aplicar los cambios.
++
++> **Nota:** Tus datos (alertas, informes, usuarios) se mantienen intactos ya que la base de datos no se sobrescribe durante el proceso.
++
++---
++
+ ## 📁 Estructura del Proyecto
 - `/src`: Código fuente del Frontend (React + Vite).
 - `server.ts`: Servidor Backend (Express + SQLite).
 - `surveillance.db`: Base de datos local (SQLite).

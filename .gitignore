@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+surveillance.db
+surveillance_backup_*.db
+uploads/
