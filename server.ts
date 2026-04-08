@@ -43,6 +43,7 @@ const upload = multer({
 
 // Inicialización de la base de datos local
 const db = new Database("surveillance.db");
+db.pragma('foreign_keys = ON');
 
 // Determinar el modo de la aplicación (development | production)
 const APP_MODE = process.env.APP_MODE || 'development';
@@ -353,6 +354,8 @@ db.exec(`
     type TEXT NOT NULL, -- 'public' or 'private'
     file_url TEXT, -- PDF
     editable_url TEXT, -- Word/PPT
+    report_date DATETIME,
+    language TEXT,
     created_by TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (client_id) REFERENCES clients(id),
@@ -380,6 +383,8 @@ const columnsToMigrate = [
   { table: 'reports', name: 'client_id', type: 'INTEGER REFERENCES clients(id)' },
   { table: 'reports', name: 'subtype', type: 'TEXT' },
   { table: 'reports', name: 'editable_url', type: 'TEXT' },
+  { table: 'reports', name: 'report_date', type: 'DATETIME' },
+  { table: 'reports', name: 'language', type: 'TEXT' },
   { table: 'takedowns', name: 'priority', type: "TEXT DEFAULT 'medium'" }
 ];
 
@@ -889,8 +894,27 @@ async function startServer() {
   });
 
   app.delete("/api/users/:id", (req, res) => {
-    db.prepare("DELETE FROM users WHERE id = ?").run(req.params.id);
-    res.json({ success: true });
+    try {
+      const userId = req.params.id;
+      
+      // Eliminar datos relacionados para evitar errores de integridad referencial
+      db.prepare("DELETE FROM access_logs WHERE user_id = ?").run(userId);
+      db.prepare("DELETE FROM comments WHERE user_id = ?").run(userId);
+      db.prepare("DELETE FROM takedown_comments WHERE user_id = ?").run(userId);
+      db.prepare("DELETE FROM notifications WHERE user_id = ?").run(userId);
+      db.prepare("DELETE FROM user_dashboard_config WHERE user_id = ?").run(userId);
+      
+      const result = db.prepare("DELETE FROM users WHERE id = ?").run(userId);
+      
+      if (result.changes === 0) {
+        return res.status(404).json({ error: "Usuario no encontrado" });
+      }
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[DB] Error al eliminar usuario:", error);
+      res.status(500).json({ error: "Error interno al eliminar el usuario: " + error.message });
+    }
   });
 
   app.get("/api/users/:id/logs", (req, res) => {
@@ -913,6 +937,33 @@ async function startServer() {
     const { name } = req.body;
     const result = db.prepare("INSERT INTO clients (name) VALUES (?)").run(name);
     res.json({ id: result.lastInsertRowid, name });
+  });
+
+  app.delete("/api/clients/:id", (req, res) => {
+    try {
+      const clientId = req.params.id;
+      
+      // Eliminar datos relacionados para evitar errores de integridad referencial
+      db.prepare("DELETE FROM users WHERE client_id = ?").run(clientId);
+      db.prepare("DELETE FROM reports WHERE client_id = ?").run(clientId);
+      db.prepare("DELETE FROM alerts WHERE client_id = ?").run(clientId);
+      db.prepare("DELETE FROM client_modules WHERE client_id = ?").run(clientId);
+      db.prepare("DELETE FROM client_technical_assets WHERE client_id = ?").run(clientId);
+      db.prepare("DELETE FROM client_details WHERE client_id = ?").run(clientId);
+      db.prepare("DELETE FROM client_contacts WHERE client_id = ?").run(clientId);
+      db.prepare("DELETE FROM takedowns WHERE client_id = ?").run(clientId);
+      
+      const result = db.prepare("DELETE FROM clients WHERE id = ?").run(clientId);
+      
+      if (result.changes === 0) {
+        return res.status(404).json({ error: "Cliente no encontrado" });
+      }
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[DB] Error al eliminar cliente:", error);
+      res.status(500).json({ error: "Error interno al eliminar el cliente: " + error.message });
+    }
   });
 
   app.get("/api/my-config", (req, res) => {
@@ -956,14 +1007,14 @@ async function startServer() {
       query += " WHERE " + conditions.join(" AND ");
     }
 
-    query += " ORDER BY created_at DESC";
+    query += " ORDER BY alerts.created_at DESC";
     const alerts = db.prepare(query).all(...params);
     res.json(alerts);
   });
 
   app.get("/api/alerts/:id", (req, res) => {
     const alert = db.prepare("SELECT alerts.*, clients.name as client_name FROM alerts JOIN clients ON alerts.client_id = clients.id WHERE alerts.id = ?").get(req.params.id) as any;
-    const comments = db.prepare("SELECT comments.*, users.username FROM comments JOIN users ON comments.user_id = users.id WHERE alert_id = ? ORDER BY created_at ASC").all(req.params.id);
+    const comments = db.prepare("SELECT comments.*, users.username FROM comments JOIN users ON comments.user_id = users.id WHERE alert_id = ? ORDER BY comments.created_at ASC").all(req.params.id);
     
     // Fetch linked reports for the alert
     const linked_reports = db.prepare(`
@@ -1020,7 +1071,7 @@ app.patch("/api/alerts/:id", async (req, res) => {
       params.push(currentUser.client_id);
     }
 
-    query += " ORDER BY created_at DESC";
+    query += " ORDER BY takedowns.created_at DESC";
     const takedowns = db.prepare(query).all(...params);
     res.json(takedowns);
   });
@@ -1029,7 +1080,7 @@ app.patch("/api/alerts/:id", async (req, res) => {
     const takedown = db.prepare("SELECT takedowns.*, clients.name as client_name FROM takedowns JOIN clients ON takedowns.client_id = clients.id WHERE takedowns.id = ?").get(req.params.id) as any;
     if (!takedown) return res.status(404).json({ error: "Takedown not found" });
     
-    const comments = db.prepare("SELECT takedown_comments.*, users.username FROM takedown_comments JOIN users ON takedown_comments.user_id = users.id WHERE takedown_id = ? ORDER BY created_at ASC").all(req.params.id);
+    const comments = db.prepare("SELECT takedown_comments.*, users.username FROM takedown_comments JOIN users ON takedown_comments.user_id = users.id WHERE takedown_id = ? ORDER BY takedown_comments.created_at ASC").all(req.params.id);
     
     res.json({ ...takedown, comments });
   });
@@ -1068,51 +1119,81 @@ app.patch("/api/alerts/:id", async (req, res) => {
 
   // --- REPORTS API ---
   app.get("/api/reports", (req, res) => {
-    const username = req.headers["x-user"] || "admin";
-    const currentUser = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
-    if (!currentUser) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      const username = req.headers["x-user"] || "admin";
+      const currentUser = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
+      if (!currentUser) {
+        console.error(`[GET /api/reports] User not found: ${username}`);
+        return res.status(401).json({ error: "Unauthorized" });
+      }
 
-    let query = `
-      SELECT reports.*, clients.name as client_name, sectors.name as sector_name
-      FROM reports 
-      LEFT JOIN clients ON reports.client_id = clients.id
-      LEFT JOIN sectors ON reports.sector_id = sectors.id
-    `;
-    const params: any[] = [];
+      let query = `
+        SELECT reports.*, clients.name as client_name, sectors.name as sector_name
+        FROM reports 
+        LEFT JOIN clients ON reports.client_id = clients.id
+        LEFT JOIN sectors ON reports.sector_id = sectors.id
+      `;
+      const params: any[] = [];
 
-    if (currentUser.role === 'client') {
-      query += " WHERE reports.type = 'public' OR reports.client_id = ?";
-      params.push(currentUser.client_id);
+      if (currentUser.role === 'client') {
+        query += " WHERE reports.type = 'public' OR reports.client_id = ?";
+        params.push(currentUser.client_id);
+      }
+
+      query += " ORDER BY COALESCE(report_date, reports.created_at) DESC";
+      const reports = db.prepare(query).all(...params) as any[];
+      
+      // Fetch linked alerts for each report
+      for (const report of reports) {
+        report.linked_alerts = db.prepare(`
+          SELECT alerts.id, alerts.title, alerts.severity 
+          FROM alerts 
+          JOIN alert_reports ON alerts.id = alert_reports.alert_id 
+          WHERE alert_reports.report_id = ?
+        `).all(report.id);
+      }
+
+      res.json(reports);
+    } catch (error) {
+      console.error("[GET /api/reports] Error:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
-
-    query += " ORDER BY created_at DESC";
-    const reports = db.prepare(query).all(...params) as any[];
-    
-    // Fetch linked alerts for each report
-    for (const report of reports) {
-      report.linked_alerts = db.prepare(`
-        SELECT alerts.id, alerts.title, alerts.severity 
-        FROM alerts 
-        JOIN alert_reports ON alerts.id = alert_reports.alert_id 
-        WHERE alert_reports.report_id = ?
-      `).all(report.id);
-    }
-
-    res.json(reports);
   });
 
   app.post("/api/reports", (req, res) => {
-    const { client_id, sector_id, title, description, category, subtype, type, file_url, editable_url, created_by } = req.body;
-    const result = db.prepare(`
-      INSERT INTO reports (client_id, sector_id, title, description, category, subtype, type, file_url, editable_url, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(client_id || null, sector_id || null, title, description, category, subtype || null, type, file_url, editable_url || null, created_by);
-    
-    res.json({ id: result.lastInsertRowid, success: true });
+    try {
+      const { client_id, sector_id, title, description, category, subtype, type, file_url, editable_url, created_by, report_date, language } = req.body;
+      
+      console.log("[POST /api/reports] Creating report:", { title, type, category, client_id });
+
+      const result = db.prepare(`
+        INSERT INTO reports (client_id, sector_id, title, description, category, subtype, type, file_url, editable_url, created_by, report_date, language)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        client_id || null, 
+        sector_id || null, 
+        title, 
+        description, 
+        category, 
+        subtype || null, 
+        type, 
+        file_url, 
+        editable_url || null, 
+        created_by, 
+        report_date || null, 
+        language || null
+      );
+      
+      console.log("[POST /api/reports] Success, ID:", result.lastInsertRowid);
+      res.json({ id: result.lastInsertRowid, success: true });
+    } catch (error) {
+      console.error("[POST /api/reports] Error:", error);
+      res.status(500).json({ error: "Error saving report to database" });
+    }
   });
 
   app.patch("/api/reports/:id", (req, res) => {
-    const { client_id, sector_id, title, description, category, subtype, type, file_url, editable_url } = req.body;
+    const { client_id, sector_id, title, description, category, subtype, type, file_url, editable_url, report_date, language } = req.body;
     db.prepare(`
       UPDATE reports SET 
         client_id = COALESCE(?, client_id),
@@ -1123,7 +1204,9 @@ app.patch("/api/alerts/:id", async (req, res) => {
         subtype = ?,
         type = COALESCE(?, type),
         file_url = COALESCE(?, file_url),
-        editable_url = ?
+        editable_url = ?,
+        report_date = COALESCE(?, report_date),
+        language = COALESCE(?, language)
       WHERE id = ?
     `).run(
       client_id || null, 
@@ -1135,6 +1218,8 @@ app.patch("/api/alerts/:id", async (req, res) => {
       type, 
       file_url, 
       editable_url || null, 
+      report_date || null,
+      language || null,
       req.params.id
     );
     res.json({ success: true });

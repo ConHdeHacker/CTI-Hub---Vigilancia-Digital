@@ -65,6 +65,54 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function ConfirmDialog({ 
+  isOpen, 
+  title, 
+  message, 
+  onConfirm, 
+  onCancel 
+}: { 
+  isOpen: boolean, 
+  title: string, 
+  message: string, 
+  onConfirm: () => void, 
+  onCancel: () => void 
+}) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 max-w-md w-full shadow-2xl"
+      >
+        <div className="flex items-center gap-3 mb-4 text-red-500">
+          <AlertTriangle size={24} />
+          <h3 className="text-lg font-bold">{title}</h3>
+        </div>
+        <p className="text-zinc-400 text-sm mb-6">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button 
+            onClick={onCancel}
+            className="px-4 py-2 rounded text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+          >
+            Cancelar
+          </button>
+          <button 
+            onClick={() => {
+              console.log("ConfirmDialog: Confirm clicked");
+              onConfirm();
+            }}
+            className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded text-sm font-bold transition-colors"
+          >
+            Eliminar
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 /**
  * Componente Principal de la Aplicación (App)
  * Gestiona el estado global, la navegación (vistas) y la renderización de componentes.
@@ -853,7 +901,7 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
               >
-                <UserManagement clients={clients} />
+                <UserManagement clients={clients} currentUser={user} />
               </motion.div>
             )}
 
@@ -3899,6 +3947,7 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
   const [uploadCategory, setUploadCategory] = useState('public:Sectoriales');
   const [editCategory, setEditCategory] = useState('');
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean, reportId: number | null }>({ isOpen: false, reportId: null });
   const [availableAlerts, setAvailableAlerts] = useState<Alert[]>([]);
   const [selectedNav, setSelectedNav] = useState<{
     type: 'public' | 'private';
@@ -3956,11 +4005,21 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
   const fetchReports = async () => {
     setLoading(true);
     try {
+      console.log('Fetching reports for user:', user.username);
       const res = await fetch('/api/reports', { headers: { 'x-user': user.username } });
+      if (!res.ok) {
+        throw new Error(`Error al obtener informes: ${res.status} ${res.statusText}`);
+      }
       const data = await res.json();
+      console.log('Reports fetched successfully:', data.length);
       setReports(Array.isArray(data) ? data : []);
     } catch (e) {
+      console.error('Failed to fetch reports:', e);
       setReports([]);
+      // Only alert if it's a real error, not just empty list
+      if (e instanceof Error && !e.message.includes('Unexpected end of JSON input')) {
+        alert('Error al cargar la lista de informes');
+      }
     }
     setLoading(false);
   };
@@ -4004,7 +4063,15 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
     const categorySubtype = formData.get('category_subtype') as string;
     const [reportType, value] = categorySubtype.split(':');
 
+    console.log('Starting upload process...', { reportType, value });
+
     try {
+      // Validation for private reports
+      if (reportType === 'private' && !formData.get('client_id')) {
+        alert('Debes seleccionar un cliente para informes privados');
+        return;
+      }
+
       // Handle file uploads first
       const pdfFile = uploadPdfFile || (form.querySelector('input[name="pdf_file"]') as HTMLInputElement).files?.[0];
       const editableFile = uploadEditableFile || (form.querySelector('input[name="editable_file"]') as HTMLInputElement).files?.[0];
@@ -4013,53 +4080,67 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
       let editable_url = '';
 
       if (pdfFile) {
+        console.log('Uploading PDF file...', pdfFile.name);
         const pdfFormData = new FormData();
         pdfFormData.append('file', pdfFile);
         const res = await fetch('/api/upload', { method: 'POST', body: pdfFormData });
         if (!res.ok) {
           const errorText = await res.text();
-          throw new Error(`Upload failed: ${res.status} ${res.statusText}. ${errorText.substring(0, 100)}`);
+          throw new Error(`Error al subir PDF: ${res.status} ${res.statusText}. ${errorText.substring(0, 100)}`);
         }
         const data = await res.json();
         file_url = data.url;
+        console.log('PDF uploaded successfully:', file_url);
       }
 
       if (editableFile) {
+        console.log('Uploading editable file...', editableFile.name);
         const editFormData = new FormData();
         editFormData.append('file', editableFile);
         const res = await fetch('/api/upload', { method: 'POST', body: editFormData });
         if (!res.ok) {
           const errorText = await res.text();
-          throw new Error(`Upload failed: ${res.status} ${res.statusText}. ${errorText.substring(0, 100)}`);
+          throw new Error(`Error al subir archivo editable: ${res.status} ${res.statusText}. ${errorText.substring(0, 100)}`);
         }
         const data = await res.json();
         editable_url = data.url;
+        console.log('Editable file uploaded successfully:', editable_url);
       }
 
       const newReport = {
-        title: formData.get('title'),
-        description: formData.get('description'),
+        title: formData.get('title') as string,
+        description: formData.get('description') as string,
         category: reportType === 'public' ? value : 'Privado',
         subtype: reportType === 'private' ? value : null,
         type: reportType,
-        client_id: formData.get('client_id') || null,
-        sector_id: formData.get('sector_id') || null,
-        file_url: file_url || formData.get('file_url'), // Fallback to URL if no file
-        editable_url: editable_url || formData.get('editable_url') || null,
+        client_id: formData.get('client_id') ? Number(formData.get('client_id')) : null,
+        sector_id: formData.get('sector_id') ? Number(formData.get('sector_id')) : null,
+        file_url: file_url || null,
+        editable_url: editable_url || null,
+        report_date: formData.get('report_date') || null,
+        language: formData.get('language') || null,
         created_by: user.username
       };
 
-      await fetch('/api/reports', {
+      console.log('Sending report data to server...', newReport);
+
+      const res = await fetch('/api/reports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newReport)
       });
 
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Error al guardar el informe en el servidor');
+      }
+
+      console.log('Report saved successfully');
       setShowUploadModal(false);
       fetchReports();
     } catch (error) {
-      console.error('Upload failed:', error);
-      alert('Error al subir el informe');
+      console.error('Upload process failed:', error);
+      alert(error instanceof Error ? error.message : 'Error al subir el informe');
     }
   };
 
@@ -4112,7 +4193,9 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
         client_id: formData.get('client_id') || null,
         sector_id: formData.get('sector_id') || null,
         file_url,
-        editable_url
+        editable_url,
+        report_date: formData.get('report_date') || null,
+        language: formData.get('language') || null
       };
 
       await fetch(`/api/reports/${editingReport.id}`, {
@@ -4145,10 +4228,17 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('¿Estás seguro de eliminar este informe?')) return;
+    setConfirmDelete({ isOpen: true, reportId: id });
+  };
+
+  const executeDelete = async () => {
+    const id = confirmDelete.reportId;
+    if (!id) return;
+
     await fetch(`/api/reports/${id}`, { method: 'DELETE' });
     fetchReports();
     if (selectedReport?.id === id) setSelectedReport(null);
+    setConfirmDelete({ isOpen: false, reportId: null });
   };
 
   const filteredReports = reports
@@ -4164,10 +4254,14 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
                r.subtype === selectedNav.subtype;
       }
     })
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    .sort((a, b) => {
+      const dateA = new Date(a.report_date || a.created_at).getTime();
+      const dateB = new Date(b.report_date || b.created_at).getTime();
+      return dateB - dateA;
+    });
 
   const groupedReports = filteredReports.reduce((acc, report) => {
-    const date = new Date(report.created_at);
+    const date = new Date(report.report_date || report.created_at);
     const year = date.getFullYear();
     const month = date.getMonth();
     if (!acc[year]) acc[year] = {};
@@ -4329,7 +4423,12 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
                                 }`}
                               >
                                 <div className="flex justify-between items-start mb-2">
-                                  <span className="text-[10px] font-mono text-zinc-500 uppercase">{formatTimelineDate(report.created_at)}</span>
+                                  <div className="flex flex-col">
+                                    <span className="text-[10px] font-mono text-zinc-500 uppercase">{formatTimelineDate(report.report_date || report.created_at)}</span>
+                                    {report.language && (
+                                      <span className="text-[9px] font-mono text-emerald-500/70 uppercase mt-0.5">{report.language}</span>
+                                    )}
+                                  </div>
                                   {isAdmin && (
                                     <div className="flex items-center gap-2">
                                       <button 
@@ -4413,7 +4512,15 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
 
                   <div className="grid grid-cols-2 gap-4 pt-4">
                     <div className="space-y-1">
-                      <span className="text-[9px] font-mono text-zinc-600 uppercase">Fecha</span>
+                      <span className="text-[9px] font-mono text-zinc-600 uppercase">Fecha Informe</span>
+                      <p className="text-xs text-zinc-300">{selectedReport.report_date ? new Date(selectedReport.report_date).toLocaleDateString() : new Date(selectedReport.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-mono text-zinc-600 uppercase">Idioma</span>
+                      <p className="text-xs text-zinc-300">{selectedReport.language || 'No especificado'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-mono text-zinc-600 uppercase">Fecha Subida</span>
                       <p className="text-xs text-zinc-300">{new Date(selectedReport.created_at).toLocaleString()}</p>
                     </div>
                     <div className="space-y-1">
@@ -4532,6 +4639,22 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
                   <textarea name="description" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50 min-h-[80px]" />
                 </div>
                 
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-zinc-500 uppercase">Fecha del Informe</label>
+                    <input type="date" name="report_date" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-zinc-500 uppercase">Idioma</label>
+                    <select name="language" className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50">
+                      <option value="Español">Español</option>
+                      <option value="Ingles">Ingles</option>
+                      <option value="Portugues">Portugues</option>
+                      <option value="Frances">Frances</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-mono text-zinc-500 uppercase">Categoría / Subtipo</label>
@@ -4698,6 +4821,22 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
                   <textarea name="description" defaultValue={editingReport.description} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50 min-h-[80px]" />
                 </div>
                 
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-zinc-500 uppercase">Fecha del Informe</label>
+                    <input type="date" name="report_date" defaultValue={editingReport.report_date ? editingReport.report_date.split('T')[0] : ''} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono text-zinc-500 uppercase">Idioma</label>
+                    <select name="language" defaultValue={editingReport.language || 'Español'} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500/50">
+                      <option value="Español">Español</option>
+                      <option value="Ingles">Ingles</option>
+                      <option value="Portugues">Portugues</option>
+                      <option value="Frances">Frances</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-mono text-zinc-500 uppercase">Categoría / Subtipo</label>
@@ -4952,17 +5091,26 @@ function DocumentManagementView({ user, clients }: { user: User, clients: Client
           </motion.div>
         </div>
       )}
+
+      <ConfirmDialog 
+        isOpen={confirmDelete.isOpen}
+        title="Eliminar Informe"
+        message="¿Estás seguro de eliminar este informe? Esta acción no se puede deshacer."
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmDelete({ isOpen: false, reportId: null })}
+      />
     </div>
   );
 }
 
-function UserManagement({ clients }: { clients: Client[] }) {
+function UserManagement({ clients, currentUser }: { clients: Client[], currentUser: any }) {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', email: '', role: 'admin', client_id: '' });
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [selectedUserLogs, setSelectedUserLogs] = useState<any[] | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean, userId: number | null }>({ isOpen: false, userId: null });
 
   useEffect(() => {
     fetchUsers();
@@ -5008,6 +5156,39 @@ function UserManagement({ clients }: { clients: Client[] }) {
     const res = await fetch(`/api/users/${userId}/logs`);
     const data = await res.json();
     setSelectedUserLogs(data);
+  };
+
+  const handleDeleteUser = async (userId: number) => {
+    console.log("handleDeleteUser triggered for ID:", userId);
+    if (currentUser && currentUser.id === userId) {
+      alert('No puedes eliminar tu propia cuenta.');
+      return;
+    }
+    setConfirmDelete({ isOpen: true, userId });
+  };
+
+  const executeDeleteUser = async () => {
+    const userId = confirmDelete.userId;
+    if (!userId) return;
+
+    console.log("Executing delete for user ID:", userId);
+    try {
+      const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+      const data = await res.json();
+      
+      if (res.ok) {
+        console.log("User deleted successfully");
+        fetchUsers();
+      } else {
+        console.error("Error deleting user:", data.error);
+        alert(`Error: ${data.error || 'No se pudo eliminar el usuario'}`);
+      }
+    } catch (error) {
+      console.error("Connection error deleting user:", error);
+      alert("Error de conexión al intentar eliminar el usuario");
+    } finally {
+      setConfirmDelete({ isOpen: false, userId: null });
+    }
   };
 
   if (loading) return <div className="text-zinc-500 font-mono">LOADING_USERS...</div>;
@@ -5112,13 +5293,29 @@ function UserManagement({ clients }: { clients: Client[] }) {
               <button onClick={() => handleResetPassword(u.id)} className="text-zinc-500 hover:text-orange-400" title="Reset Password">
                 <Lock size={16} />
               </button>
-              <button className="text-zinc-500 hover:text-red-400" title="Eliminar">
-                <Plus className="rotate-45" size={16} />
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleDeleteUser(u.id);
+                }} 
+                className="text-zinc-500 hover:text-red-400 transition-colors p-1" 
+                title="Eliminar"
+              >
+                <Trash2 size={16} />
               </button>
             </div>
           </div>
         ))}
       </div>
+
+      <ConfirmDialog 
+        isOpen={confirmDelete.isOpen}
+        title="Eliminar Usuario"
+        message="¿Estás seguro de eliminar este usuario? Esta acción no se puede deshacer y se borrarán todos sus registros asociados."
+        onConfirm={executeDeleteUser}
+        onCancel={() => setConfirmDelete({ isOpen: false, userId: null })}
+      />
 
       {selectedUserLogs && (
         <div className="bg-[#0d0d0d] border border-zinc-800 rounded-xl p-6 space-y-4">
@@ -5146,6 +5343,36 @@ function UserManagement({ clients }: { clients: Client[] }) {
 
 function ClientManagement({ clients, onUpdate, onConfigure }: { clients: Client[], onUpdate: () => void, onConfigure: (id: number) => void }) {
   const [newClientName, setNewClientName] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean, clientId: number | null }>({ isOpen: false, clientId: null });
+
+  const handleDeleteClient = async (clientId: number) => {
+    console.log("handleDeleteClient triggered for ID:", clientId);
+    setConfirmDelete({ isOpen: true, clientId });
+  };
+
+  const executeDeleteClient = async () => {
+    const clientId = confirmDelete.clientId;
+    if (!clientId) return;
+
+    console.log("Executing delete for client ID:", clientId);
+    try {
+      const res = await fetch(`/api/clients/${clientId}`, { method: 'DELETE' });
+      const data = await res.json();
+      
+      if (res.ok) {
+        console.log("Client deleted successfully");
+        onUpdate();
+      } else {
+        console.error("Error deleting client:", data.error);
+        alert(`Error: ${data.error || 'No se pudo eliminar el cliente'}`);
+      }
+    } catch (error) {
+      console.error("Connection error deleting client:", error);
+      alert("Error de conexión al intentar eliminar el cliente");
+    } finally {
+      setConfirmDelete({ isOpen: false, clientId: null });
+    }
+  };
 
   const handleAddClient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -5197,17 +5424,36 @@ function ClientManagement({ clients, onUpdate, onConfigure }: { clients: Client[
             <div className="font-mono text-zinc-500 text-xs">#{client.id.toString().padStart(3, '0')}</div>
             <div className="col-span-2 text-sm font-medium">{client.name}</div>
             <div className="text-xs text-zinc-500 font-mono">{new Date(client.created_at).toLocaleDateString()}</div>
-            <div className="text-right">
+            <div className="text-right flex justify-end gap-3">
               <button 
                 onClick={() => onConfigure(client.id)}
-                className="text-emerald-400 hover:text-emerald-300 text-xs font-mono uppercase tracking-tighter flex items-center gap-1 ml-auto"
+                className="text-emerald-400 hover:text-emerald-300 text-xs font-mono uppercase tracking-tighter flex items-center gap-1"
               >
                 Configurar <ChevronRight size={14} />
+              </button>
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleDeleteClient(client.id);
+                }}
+                className="text-zinc-500 hover:text-red-400 transition-colors p-1"
+                title="Eliminar Cliente"
+              >
+                <Trash2 size={16} />
               </button>
             </div>
           </div>
         ))}
       </div>
+
+      <ConfirmDialog 
+        isOpen={confirmDelete.isOpen}
+        title="Eliminar Cliente"
+        message="¿Estás seguro de eliminar este cliente? Todos sus usuarios, reportes y alertas asociados serán eliminados permanentemente. Esta acción no se puede deshacer."
+        onConfirm={executeDeleteClient}
+        onCancel={() => setConfirmDelete({ isOpen: false, clientId: null })}
+      />
     </div>
   );
 }
